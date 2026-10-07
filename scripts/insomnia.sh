@@ -21,6 +21,7 @@ LOW_POWER=0
 FOREGROUND=0
 REMOTE_DIR=""
 REMOTE_SPAWN="same-dir"
+REMOTE_MIN_BATTERY="${INSOMNIA_REMOTE_MIN_BATTERY:-20}"
 TRIP_LEVELS="Heavy|Trapping|Sleeping|Serious|Critical"
 
 CAFF_PID=""
@@ -149,6 +150,10 @@ start_remote() {
     return 0
   fi
   dir=$(cd "$REMOTE_DIR" 2>/dev/null && pwd) || { echo "No such folder: $REMOTE_DIR" >&2; return 1; }
+  if on_battery && [ "$(batt_percent)" -lt "$REMOTE_MIN_BATTERY" ]; then
+    echo "Battery is at $(batt_percent)%, below ${REMOTE_MIN_BATTERY}%. Plug in to start phone access." >&2
+    return 1
+  fi
   bin=$(claude_bin) || { echo "claude CLI not found" >&2; return 1; }
   : > "$REMOTE_LOG"
   local name
@@ -163,7 +168,9 @@ start_remote() {
   if remote_pid >/dev/null && grep -q "Connected" "$REMOTE_LOG"; then
     echo "$dir" > "$REMOTE_DIRFILE"
     mkdir -p "$(dirname "$LAST_DIR_FILE")" && echo "$dir" > "$LAST_DIR_FILE"
+    ( trap '' HUP; exec "$0" _remote_guard ) </dev/null >>"$LOG" 2>&1 &
     echo "Remote Control is ON in $dir (new phone sessions: $REMOTE_SPAWN)."
+    echo "It stops by itself if the Mac is on battery below ${REMOTE_MIN_BATTERY}%."
     echo "Open the Claude app > Code on your phone, or: $(remote_url)"
   else
     echo "Remote Control failed to start, see $REMOTE_LOG" >&2
@@ -178,6 +185,21 @@ kill_tree() {
     kill_tree "$child"
   done
   kill -TERM "$1" 2>/dev/null
+}
+
+remote_guard() {
+  local pct
+  while remote_pid >/dev/null; do
+    if on_battery; then
+      pct=$(batt_percent)
+      if [ -n "$pct" ] && [ "$pct" -lt "$REMOTE_MIN_BATTERY" ]; then
+        log "phone access stopped: on battery at ${pct}%, below ${REMOTE_MIN_BATTERY}%"
+        stop_remote
+        break
+      fi
+    fi
+    sleep 60
+  done
 }
 
 stop_remote() {
@@ -428,6 +450,7 @@ cmd_recent_dirs() {
 case "${1:-}" in
   on) shift; cmd_on "$@" ;;
   _run) shift; parse_opts "$@"; run_watchdog ;;
+  _remote_guard) remote_guard ;;
   off) shift; cmd_off "$@" ;;
   toggle)
     shift

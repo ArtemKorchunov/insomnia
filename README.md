@@ -21,7 +21,7 @@ It is built for leaving long jobs running (AI coding agents, builds, downloads, 
   - the optional `--hours` limit runs out.
 - **Always restores sleep.** Stopping it in any normal way (`insomnia off`, Ctrl+C, a tripped limit) switches normal sleep back on. `insomnia status` warns if sleep was ever left disabled by a crash.
 - **Locks the screen when the lid closes** (menu bar app). A locked Mac keeps running everything; only sleep stops work.
-- **Phone access** (optional). `--remote DIR` starts `claude remote-control` in DIR, so the Claude mobile app (Code tab) or claude.ai/code can open and create sessions that run on this Mac. Turning Insomnia off leaves phone access running, so phone chats stay connected while the Mac is awake.
+- **Phone access** (optional). `--remote DIR` starts `claude remote-control` in DIR, so the Claude mobile app (Code tab) or claude.ai/code can open and create sessions that run on this Mac. Turning Insomnia off leaves phone access running, so phone chats stay connected while the Mac is awake. A battery guard stops phone access when the Mac is on battery below 20% (set `INSOMNIA_REMOTE_MIN_BATTERY` to change it), so it can never drain a forgotten laptop. If you use the Claude desktop app, also consider turning off its "Keep awake on battery power" setting.
 - **Menu bar app.** Turn on, turn on with phone access in one of your recent Claude folders, turn off, lock, battery and temperature, and settings (Low Power Mode, time limit, worktrees per phone session, Open at Login).
 
 ## Requirements
