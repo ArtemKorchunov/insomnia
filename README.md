@@ -8,7 +8,7 @@ It is built for leaving long jobs running (AI coding agents, builds, downloads, 
 
 | Off | On | Switching |
 |---|---|---|
-| <img src="assets/menu-asleep.png" width="72" alt="closed eye"> | <img src="assets/menu-awake.png" width="72" alt="open eye with a crescent moon iris"> | <img src="assets/menu-waking.png" width="72" alt="half-open eye"> |
+| <img src="assets/menu-asleep.png" width="72" alt="closed sleeping eye"> | <img src="assets/menu-awake.png" width="72" alt="open eye with the Claude spark as its iris"> | <img src="assets/menu-waking.png" width="72" alt="half-open waking eye"> |
 
 ## What it does
 
@@ -94,15 +94,19 @@ Short version: on a fan-cooled MacBook Pro on a hard surface or stand, yes, low 
 ```
 scripts/insomnia.sh      the command: on/off, watchdog, Remote Control, state for the app
 menubar/main.swift       the menu bar app (AppKit, no dependencies)
-menubar/Icons.swift      hand-drawn menu bar and app icons
+menubar/Icons.swift      menu bar and app icons
 menubar/tools/main.swift renders the .icns and previews
 menubar/build.sh         compiles and installs ~/Applications/Insomnia.app
 claude-skill/SKILL.md    Claude Code skill
 CLAUDE.md                install and usage plan for Claude
 ```
 
+The open eye's iris is the Claude spark. The repo does not ship the logo: `menubar/build.sh` cuts it out of the Claude desktop app installed on your Mac (`/Applications/Claude.app`) at build time. Without the Claude app, the build falls back to a hand-drawn spark.
+
 `pmset -a disablesleep` is undocumented by Apple. It has worked for years, but a future macOS could change it.
 
 ## License
 
-MIT
+MIT for the code in this repo.
+
+Claude and the Claude logo are trademarks of Anthropic. Insomnia is an independent project, not made, endorsed or supported by Anthropic. The logo is not covered by the MIT license.

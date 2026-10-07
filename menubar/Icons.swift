@@ -52,11 +52,64 @@ func drawCrescentIris(center: NSPoint, radius: CGFloat, cutOffset: NSPoint, cutR
     NSGraphicsContext.restoreGraphicsState()
 }
 
+let sparkRays: [(angle: CGFloat, length: CGFloat)] = [
+    (6, 1.0), (36, 0.7), (64, 0.93), (95, 0.66), (123, 0.98), (151, 0.76),
+    (183, 0.9), (212, 0.69), (241, 1.0), (269, 0.74), (299, 0.95), (329, 0.67),
+]
+
+func sparkPath(center: NSPoint, radius: CGFloat) -> NSBezierPath {
+    let path = NSBezierPath()
+    path.windingRule = .nonZero
+    let baseHalf = radius * 0.14
+    let tipR = radius * 0.085
+    for ray in sparkRays {
+        let a = ray.angle * .pi / 180
+        let dir = NSPoint(x: cos(a), y: sin(a))
+        let normal = NSPoint(x: -sin(a), y: cos(a))
+        let len = radius * ray.length
+        let tip = NSPoint(x: center.x + dir.x * (len - tipR), y: center.y + dir.y * (len - tipR))
+        let b1 = NSPoint(x: center.x + normal.x * baseHalf, y: center.y + normal.y * baseHalf)
+        let b2 = NSPoint(x: center.x - normal.x * baseHalf, y: center.y - normal.y * baseHalf)
+        let t1 = NSPoint(x: tip.x + normal.x * tipR, y: tip.y + normal.y * tipR)
+        let blade = NSBezierPath()
+        blade.move(to: b1)
+        blade.line(to: t1)
+        blade.appendArc(withCenter: tip, radius: tipR, startAngle: (ray.angle + 90), endAngle: (ray.angle - 90), clockwise: true)
+        blade.line(to: b2)
+        blade.close()
+        path.append(blade)
+    }
+    path.appendOval(in: NSRect(x: center.x - baseHalf * 1.3, y: center.y - baseHalf * 1.3, width: baseHalf * 2.6, height: baseHalf * 2.6))
+    return path
+}
+
+let sparkMask: NSImage? = {
+    if let path = ProcessInfo.processInfo.environment["INSOMNIA_SPARK"], let img = NSImage(contentsOfFile: path) { return img }
+    if let url = Bundle.main.url(forResource: "claude-spark", withExtension: "png"), let img = NSImage(contentsOf: url) { return img }
+    return nil
+}()
+
+func drawSparkMask(_ mask: NSImage, center: NSPoint, radius: CGFloat, color: NSColor) {
+    let rect = NSRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2)
+    let tinted = NSImage(size: rect.size, flipped: false) { r in
+        mask.draw(in: r)
+        color.set()
+        r.fill(using: .sourceAtop)
+        return true
+    }
+    tinted.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1)
+}
+
 func drawMenuIcon(_ kind: MenuIconKind) {
     NSColor.black.set()
     switch kind {
     case .awake:
-        drawCrescentIris(center: NSPoint(x: 9, y: 9), radius: 3.4, cutOffset: NSPoint(x: 1.5, y: 1.1), cutRadius: 2.7, color: .black)
+        if let mask = sparkMask {
+            drawSparkMask(mask, center: NSPoint(x: 9, y: 9), radius: 3.5, color: .black)
+        } else {
+            NSColor.black.setFill()
+            sparkPath(center: NSPoint(x: 9, y: 9), radius: 3.0).fill()
+        }
         NSColor.black.setStroke()
         let eye = openEyePath()
         eye.lineWidth = 1.4
@@ -164,15 +217,13 @@ func drawAppIcon(size: CGFloat) {
     NSGraphicsContext.saveGraphicsState()
     eye.addClip()
     let irisCenter = NSPoint(x: 512 * s, y: 500 * s)
-    let irisR = 3.2 * 40 * s
-    NSGradient(colors: [
-        NSColor(calibratedRed: 1, green: 0.88, blue: 0.42, alpha: 1),
-        NSColor(calibratedRed: 0.98, green: 0.62, blue: 0.2, alpha: 1),
-    ])?.draw(in: NSBezierPath(ovalIn: NSRect(x: irisCenter.x - irisR, y: irisCenter.y - irisR, width: irisR * 2, height: irisR * 2)), angle: -60)
-    let cutR = 2.55 * 40 * s
-    let cut = NSPoint(x: irisCenter.x + 1.4 * 40 * s, y: irisCenter.y + 1.05 * 40 * s)
-    NSColor(calibratedRed: 0.97, green: 0.96, blue: 1, alpha: 1).setFill()
-    NSBezierPath(ovalIn: NSRect(x: cut.x - cutR, y: cut.y - cutR, width: cutR * 2, height: cutR * 2)).fill()
+    let claudeOrange = NSColor(calibratedRed: 0.851, green: 0.467, blue: 0.341, alpha: 1)
+    if let mask = sparkMask {
+        drawSparkMask(mask, center: irisCenter, radius: 2.9 * 40 * s, color: claudeOrange)
+    } else {
+        claudeOrange.setFill()
+        sparkPath(center: irisCenter, radius: 2.6 * 40 * s).fill()
+    }
     NSGraphicsContext.restoreGraphicsState()
 
     NSColor(calibratedRed: 0.1, green: 0.08, blue: 0.25, alpha: 1).setStroke()
