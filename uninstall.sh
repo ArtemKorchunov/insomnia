@@ -4,6 +4,8 @@ set -u
 if command -v insomnia >/dev/null 2>&1; then
   insomnia off --all 2>/dev/null || true
 fi
+launchctl bootout "gui/$(id -u)/com.oddproblems.insomnia.heal" 2>/dev/null || true
+rm -f "$HOME/Library/LaunchAgents/com.oddproblems.insomnia.heal.plist"
 pkill -x InsomniaBar 2>/dev/null || true
 rm -rf "$HOME/Applications/Insomnia.app"
 rm -f "$HOME/.local/bin/insomnia"

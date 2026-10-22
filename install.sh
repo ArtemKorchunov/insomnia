@@ -30,6 +30,8 @@ case ":$PATH:" in
   *) echo "Note: $BIN_DIR is not on your PATH. Add this to ~/.zshrc:  export PATH=\"\$HOME/.local/bin:\$PATH\"" ;;
 esac
 
+"$REPO/scripts/insomnia.sh" heal-agent install
+
 if [ "$WITH_APP" = 1 ]; then
   if ! command -v swiftc >/dev/null 2>&1; then
     echo "swiftc not found. Install the Xcode Command Line Tools (xcode-select --install) and re-run, or use --no-app." >&2

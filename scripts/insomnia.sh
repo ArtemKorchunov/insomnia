@@ -12,6 +12,8 @@ REMOTE_PIDFILE=/tmp/insomnia-remote.pid
 REMOTE_LOG=/tmp/insomnia-remote.log
 REMOTE_DIRFILE=/tmp/insomnia-remote.dir
 LAST_DIR_FILE="$HOME/.config/insomnia/last-dir"
+HEAL_LABEL=com.oddproblems.insomnia.heal
+HEAL_NOTIFIED=/tmp/insomnia-heal.notified
 
 INTERVAL=30
 HOURS=0
@@ -47,6 +49,10 @@ Usage:
                                (allows only its exact pmset/powermetrics commands).
   insomnia uninstall-nopasswd  Remove that rule again.
   insomnia nopasswd-status     Exit 0 if the rule is installed.
+  insomnia heal           Restore normal sleep if it is disabled with no watchdog
+                          running (after a crash, kill -9 or reboot mid-session).
+  insomnia heal-agent install|uninstall|status
+                          A login agent that runs "heal" at login and every minute.
 
 Options for "on":
   --hours N          Stop after N hours (decimals ok). Default: no limit.
@@ -115,7 +121,10 @@ running_pid() {
   [ -f "$PIDFILE" ] || return 1
   local pid
   pid=$(cat "$PIDFILE" 2>/dev/null)
-  [ -n "$pid" ] && ps -p "$pid" >/dev/null 2>&1 && echo "$pid"
+  # The pid must still be an insomnia watchdog ("insomnia _run" in the
+  # background, "insomnia on --fg" in the foreground): after a crash or a
+  # reboot the old number can be reused by an unrelated process.
+  [ -n "$pid" ] && ps -o command= -p "$pid" 2>/dev/null | grep -Eq 'insomnia[^ /]* (_run|on)( |$)' && echo "$pid"
 }
 
 pid_owner() { ps -o user= -p "$1" 2>/dev/null | tr -d ' '; }
@@ -371,6 +380,75 @@ cmd_off() {
   fi
 }
 
+# Crash-proof restore: if sleep is disabled but no watchdog is alive (kill -9,
+# crash, power loss, a reboot during a session), switch normal sleep back on.
+# Run by the heal agent at login and every minute; safe to run any time.
+cmd_heal() {
+  [ "$(sleep_disabled)" = 1 ] || { rm -f "$HEAL_NOTIFIED"; return 0; }
+  running_pid >/dev/null && return 0
+  # A session that is starting or stopping right now owns the setting; look again.
+  sleep 3
+  [ "$(sleep_disabled)" = 1 ] || return 0
+  running_pid >/dev/null && return 0
+  if priv /usr/bin/pmset -a disablesleep 0; then
+    rm -f "$PIDFILE" "$HEAL_NOTIFIED" 2>/dev/null
+    log "heal: sleep was disabled with no watchdog running, normal sleep restored"
+    echo "Sleep was disabled with no watchdog running. Normal sleep restored."
+    if lid_closed; then
+      log "heal: lid is closed, sleeping now"
+      priv /usr/bin/pmset sleepnow >/dev/null
+    fi
+    return 0
+  fi
+  log "heal: sleep is disabled with no watchdog running, but restoring needs admin rights (insomnia install-nopasswd)"
+  echo "Sleep is disabled with no watchdog running. Run 'insomnia off' (or install-nopasswd so this fixes itself)." >&2
+  if [ ! -f "$HEAL_NOTIFIED" ]; then
+    touch "$HEAL_NOTIFIED"
+    /usr/bin/osascript -e 'display notification "Sleep is disabled but no watchdog is running. Run: insomnia off" with title "Insomnia"' >/dev/null 2>&1
+  fi
+  return 1
+}
+
+heal_agent_path() { echo "$HOME/Library/LaunchAgents/$HEAL_LABEL.plist"; }
+
+cmd_heal_agent() {
+  local plist script
+  plist=$(heal_agent_path)
+  case "${1:-status}" in
+    install)
+      script=$(realpath "$0")
+      mkdir -p "$(dirname "$plist")"
+      cat > "$plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>$HEAL_LABEL</string>
+  <key>ProgramArguments</key>
+  <array><string>/bin/bash</string><string>$script</string><string>heal</string></array>
+  <key>RunAtLoad</key><true/>
+  <key>StartInterval</key><integer>60</integer>
+  <key>StandardOutPath</key><string>/dev/null</string>
+  <key>StandardErrorPath</key><string>/dev/null</string>
+</dict>
+</plist>
+PLIST
+      launchctl bootout "gui/$(id -u)/$HEAL_LABEL" 2>/dev/null
+      launchctl bootstrap "gui/$(id -u)" "$plist" && echo "Heal agent installed: restores normal sleep within a minute if a session dies without cleaning up."
+      has_rule || echo "Note: without 'insomnia install-nopasswd' it can only notify you, not restore sleep itself."
+      ;;
+    uninstall)
+      launchctl bootout "gui/$(id -u)/$HEAL_LABEL" 2>/dev/null
+      rm -f "$plist"
+      echo "Heal agent removed."
+      ;;
+    status)
+      launchctl print "gui/$(id -u)/$HEAL_LABEL" >/dev/null 2>&1
+      ;;
+    *) echo "Usage: insomnia heal-agent install|uninstall|status" >&2; return 2 ;;
+  esac
+}
+
 cmd_install_nopasswd() {
   local user tmp
   user="${SUDO_USER:-$USER}"
@@ -398,7 +476,7 @@ cmd_status() {
   fi
   echo "Sleep disabled:   ${sd:-0}"
   if [ "${sd:-0}" = 1 ] && ! running_pid >/dev/null; then
-    echo "WARNING: sleep is disabled but no watchdog is running. Run 'insomnia off'."
+    echo "WARNING: sleep is disabled but no watchdog is running. Run 'insomnia off' (the heal agent fixes this within a minute)."
   fi
   echo "Lid:              $(lid_state)"
   echo "Power source:     $(power_source)"
@@ -466,6 +544,8 @@ case "${1:-}" in
   install-nopasswd) cmd_install_nopasswd ;;
   uninstall-nopasswd) sudo rm -f "$SUDOERS_FILE" && echo "Removed $SUDOERS_FILE." ;;
   nopasswd-status) has_rule ;;
+  heal) cmd_heal ;;
+  heal-agent) cmd_heal_agent "${2:-status}" ;;
   -h|--help|help|"") usage ;;
   *) echo "Unknown command: $1" >&2; usage; exit 2 ;;
 esac

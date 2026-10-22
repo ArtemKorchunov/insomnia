@@ -33,4 +33,4 @@ insomnia nopasswd-status                      # exit 0 when no-password switchin
 
 ## Safety
 
-Watchdog limits: thermal pressure Heavy or worse, battery above 45 °C, under 20% on battery, or the `--hours` limit. On a trip it restores sleep and sleeps the Mac if the lid is closed. A locked screen does not stop work; only sleep does. Keep the Mac on a hard surface or stand, never in a bag or on a bed. For heat questions give the real numbers from `insomnia status`.
+Watchdog limits: thermal pressure Heavy or worse, battery above 45 °C, under 20% on battery, or the `--hours` limit. On a trip it restores sleep and sleeps the Mac if the lid is closed. If the watchdog itself dies (crash, `kill -9`, reboot), the heal agent (`insomnia heal-agent status`) restores sleep within a minute. A locked screen does not stop work; only sleep does. Keep the Mac on a hard surface or stand, never in a bag or on a bed. For heat questions give the real numbers from `insomnia status`.

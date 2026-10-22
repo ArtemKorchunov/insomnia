@@ -19,7 +19,7 @@ It is built for leaving long jobs running (AI coding agents, builds, downloads, 
   - the battery passes 45 °C (`--max-temp`),
   - the charge drops under 20% on battery power (`--min-battery`),
   - the optional `--hours` limit runs out.
-- **Always restores sleep.** Stopping it in any normal way (`insomnia off`, Ctrl+C, a tripped limit) switches normal sleep back on. `insomnia status` warns if sleep was ever left disabled by a crash.
+- **Always restores sleep.** Stopping it in any normal way (`insomnia off`, Ctrl+C, a tripped limit) switches normal sleep back on. Even a crash, a `kill -9` of the watchdog or a reboot mid-session can't leave sleep disabled: a small login agent (`insomnia heal-agent`, set up by the installer) runs `insomnia heal` at login and every minute, and if sleep is disabled with no watchdog alive it switches sleep back on (and sleeps the Mac if the lid is closed). Restoring on its own needs the no-password rule below; without it the agent notifies you instead.
 - **Locks the screen when the lid closes** (menu bar app). A locked Mac keeps running everything; only sleep stops work.
 - **Phone access** (optional). `--remote DIR` starts `claude remote-control` in DIR, so the Claude mobile app (Code tab) or claude.ai/code can open and create sessions that run on this Mac. Turning Insomnia off leaves phone access running, so phone chats stay connected while the Mac is awake. A battery guard stops phone access when the Mac is on battery below 20% (set `INSOMNIA_REMOTE_MIN_BATTERY` to change it), so it can never drain a forgotten laptop. If you use the Claude desktop app, also consider turning off its "Keep awake on battery power" setting.
 - **Menu bar app.** Turn on, turn on with phone access in one of your recent Claude folders, turn off, lock, battery and temperature, and settings (Low Power Mode, time limit, worktrees per phone session, Open at Login).
@@ -56,6 +56,8 @@ insomnia install-nopasswd
 ```
 
 This adds `/etc/sudoers.d/insomnia`, validated with `visudo`, that allows **only** the exact commands Insomnia runs (`pmset -a disablesleep 0|1`, `pmset sleepnow`, `pmset -b|-c powermode 0|1|2`, `pmset -a powermode 1`, and `powermetrics --samplers thermal -n 1 -i 1000`). The script itself never gets passwordless root. Remove it with `insomnia uninstall-nopasswd`.
+
+The heal agent is a per-user LaunchAgent (`~/Library/LaunchAgents/com.oddproblems.insomnia.heal.plist`). Manage it with `insomnia heal-agent install|uninstall|status`. It treats any `disablesleep 1` without a running Insomnia watchdog as left over, so if you also set that by hand, uninstall the agent.
 
 ### Uninstall
 
