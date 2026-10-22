@@ -21,7 +21,7 @@ It is built for leaving long jobs running (AI coding agents, builds, downloads, 
   - the optional `--hours` limit runs out.
 - **Always restores sleep.** Stopping it in any normal way (`insomnia off`, Ctrl+C, a tripped limit) switches normal sleep back on. Even a crash, a `kill -9` of the watchdog or a reboot mid-session can't leave sleep disabled: a small login agent (`insomnia heal-agent`, set up by the installer) runs `insomnia heal` at login and every minute, and if sleep is disabled with no watchdog alive it switches sleep back on (and sleeps the Mac if the lid is closed). Restoring on its own needs the no-password rule below; without it the agent notifies you instead.
 - **Locks the screen when the lid closes** (menu bar app). A locked Mac keeps running everything; only sleep stops work.
-- **Phone access** (optional). `--remote DIR` starts `claude remote-control` in DIR, so the Claude mobile app (Code tab) or claude.ai/code can open and create sessions that run on this Mac. Turning Insomnia off leaves phone access running, so phone chats stay connected while the Mac is awake. A battery guard stops phone access when the Mac is on battery below 20% (set `INSOMNIA_REMOTE_MIN_BATTERY` to change it), so it can never drain a forgotten laptop. If you use the Claude desktop app, also consider turning off its "Keep awake on battery power" setting.
+- **Phone access** (optional). `--remote DIR` starts `claude remote-control` in DIR, so the Claude mobile app (Code tab) or claude.ai/code can open and create sessions that run on this Mac. `--remote all` does this in every recent Claude folder at once (up to 8, `INSOMNIA_REMOTE_MAX`; the home folder is skipped because Remote Control never saves trust there), one server per folder named `<Mac> · <folder>`, so the phone can open and start chats in any of them. `--remote` can also be repeated, and `insomnia remote-on DIR...|all` adds folders to a running setup. A folder whose server can't start (for example an untrusted folder) is reported and skipped. In worktree mode, folders that aren't git repos fall back to same-dir. Chats started in the Claude desktop app show on the phone through its own "Connect new sessions to Remote Control" setting. Turning Insomnia off leaves phone access running, so phone chats stay connected while the Mac is awake. A battery guard stops phone access when the Mac is on battery below 20% (set `INSOMNIA_REMOTE_MIN_BATTERY` to change it), so it can never drain a forgotten laptop. If you use the Claude desktop app, also consider turning off its "Keep awake on battery power" setting.
 - **Menu bar app.** Turn on, turn on with phone access in one of your recent Claude folders, turn off, lock, battery and temperature, and settings (Low Power Mode, time limit, worktrees per phone session, Open at Login).
 
 ## Requirements
@@ -71,6 +71,7 @@ The heal agent is a per-user LaunchAgent (`~/Library/LaunchAgents/com.oddproblem
 insomnia on                                   # lid-closed mode, runs in the background
 insomnia on --hours 3 --low-power             # stop after 3 hours, run cooler
 insomnia on --remote ~/code/my-project        # plus Claude Code sessions from your phone
+insomnia on --remote all                      # phone access in all your recent Claude folders
 insomnia on --remote ~/code/my-project --remote-spawn worktree   # each phone session in its own git worktree
 insomnia off                                  # normal sleep back (phone access keeps running)
 insomnia off --all                            # also stop phone access
@@ -78,7 +79,7 @@ insomnia status                               # human-readable state
 insomnia toggle
 ```
 
-Logs: `/tmp/insomnia-watchdog.log` and `/tmp/insomnia-remote.log`.
+Logs: `/tmp/insomnia-watchdog.log` and `/tmp/insomnia-remote.d/*.log` (one per phone folder).
 
 ## Using it with Claude Code
 

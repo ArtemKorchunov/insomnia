@@ -252,7 +252,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         _ = addItem(menu, info, nil, enabled: false)
 
         if remoteOn {
-            _ = addItem(menu, "Phone access on in \(tildePath(state["remote_dir"] ?? ""))", nil, enabled: false)
+            let dirs = (state["remote_dirs"] ?? state["remote_dir"] ?? "").split(separator: "|").map { tildePath(String($0)) }
+            if dirs.count > 1 {
+                let item = NSMenuItem(title: "Phone access on in \(dirs.count) folders", action: nil, keyEquivalent: "")
+                let sub = NSMenu()
+                sub.autoenablesItems = false
+                for dir in dirs { _ = addItem(sub, dir, nil, enabled: false) }
+                item.submenu = sub
+                menu.addItem(item)
+            } else {
+                _ = addItem(menu, "Phone access on in \(dirs.first ?? "")", nil, enabled: false)
+            }
             _ = addItem(menu, "Copy Phone Link", #selector(copyLink))
         }
 
@@ -264,6 +274,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if remoteOn {
             _ = addItem(menu, "Stop Phone Access", #selector(stopPhoneAccess), enabled: !busy)
         }
+        if isRunning {
+            _ = addItem(menu, remoteOn ? "Add Phone Access in All Recent Folders" : "Phone Access in All Recent Folders", #selector(phoneAccessAll), enabled: !busy)
+        }
         if !isRunning {
             _ = addItem(menu, "Turn On", #selector(turnOnPlain), enabled: !busy)
 
@@ -273,6 +286,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             sub.autoenablesItems = false
             if recentDirs.isEmpty {
                 _ = addItem(sub, "No recent folders", nil, enabled: false)
+            } else {
+                let all = addItem(sub, "All Recent Folders", #selector(turnOnWithDir(_:)), enabled: !busy, object: "all")
+                all.toolTip = "One phone server per folder below (except your home folder), so the phone can open chats in any of them"
+                sub.addItem(.separator())
             }
             for dir in recentDirs {
                 let item = addItem(sub, tildePath(dir), #selector(turnOnWithDir(_:)), enabled: !busy, object: dir)
@@ -404,6 +421,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 self.state = st
                 self.setBusy(false)
                 if r.status != 0, !r.output.contains("-128") { self.showError(r.output) }
+            }
+        }
+    }
+
+    @objc func phoneAccessAll() {
+        setBusy(true)
+        let worktree = self.worktree
+        DispatchQueue.global().async {
+            var args = ["remote-on", "all"]
+            if worktree { args += ["--remote-spawn", "worktree"] }
+            let r = self.runScript(args)
+            let st = self.fetchState()
+            DispatchQueue.main.async {
+                self.state = st
+                self.setBusy(false)
+                if r.status != 0 { self.showError(r.output) }
             }
         }
     }

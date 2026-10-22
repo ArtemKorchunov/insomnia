@@ -11,6 +11,8 @@ SUDOERS_FILE=/etc/sudoers.d/insomnia
 REMOTE_PIDFILE=/tmp/insomnia-remote.pid
 REMOTE_LOG=/tmp/insomnia-remote.log
 REMOTE_DIRFILE=/tmp/insomnia-remote.dir
+REMOTE_STATE_DIR=/tmp/insomnia-remote.d
+REMOTE_GUARD_PIDFILE=/tmp/insomnia-remote-guard.pid
 LAST_DIR_FILE="$HOME/.config/insomnia/last-dir"
 HEAL_LABEL=com.oddproblems.insomnia.heal
 HEAL_NOTIFIED=/tmp/insomnia-heal.notified
@@ -21,7 +23,8 @@ MIN_BATTERY=20
 MAX_BATT_TEMP=45
 LOW_POWER=0
 FOREGROUND=0
-REMOTE_DIR=""
+REMOTE_DIRS=""
+REMOTE_MAX="${INSOMNIA_REMOTE_MAX:-8}"
 REMOTE_SPAWN="same-dir"
 REMOTE_MIN_BATTERY="${INSOMNIA_REMOTE_MIN_BATTERY:-20}"
 TRIP_LEVELS="Heavy|Trapping|Sleeping|Serious|Critical"
@@ -43,8 +46,10 @@ Usage:
   insomnia status         Show sleep state, lid, power, battery temp, thermal pressure.
   insomnia state          Same as status, as key=value lines (for the menu bar app).
   insomnia recent-dirs [N]  Most recent folders Claude sessions ran in.
-  insomnia remote-on DIR [--remote-spawn M]   Only start Remote Control (no sudo).
-  insomnia remote-off     Only stop Remote Control.
+  insomnia remote-on DIR...|all [--remote-spawn M]
+                          Only start phone access (no sudo), in each DIR or in
+                          all recent Claude folders. Adds to folders already on.
+  insomnia remote-off     Stop phone access in every folder.
   insomnia install-nopasswd    One-time: let insomnia switch without a password
                                (allows only its exact pmset/powermetrics commands).
   insomnia uninstall-nopasswd  Remove that rule again.
@@ -61,9 +66,11 @@ Options for "on":
   --low-power        Switch to Low Power Mode while running (less heat), restore after.
   --interval S       Watchdog check interval in seconds. Default: 30.
   --fg               Stay in the foreground; Ctrl+C restores normal sleep.
-  --remote DIR       Also start Claude Remote Control in DIR, so the Claude phone app
+  --remote DIR|all   Also start Claude Remote Control in DIR, so the Claude phone app
                      (Code tab) or claude.ai/code can open existing sessions and create
-                     new ones that run on this Mac. Stops together with insomnia.
+                     new ones that run on this Mac. Repeat for more folders; "all"
+                     uses the most recent Claude folders (up to INSOMNIA_REMOTE_MAX,
+                     default 8; your home folder is skipped).
   --remote-spawn M   Where phone-created sessions run: same-dir (default) or worktree.
 
 When a limit trips with the lid closed, the Mac is put to sleep immediately.
@@ -141,51 +148,120 @@ claude_bin() {
   fi
 }
 
-remote_pid() {
-  [ -f "$REMOTE_PIDFILE" ] || return 1
-  local pid
-  pid=$(cat "$REMOTE_PIDFILE" 2>/dev/null)
-  [ -n "$pid" ] && ps -p "$pid" >/dev/null 2>&1 && echo "$pid"
+# Phone access runs one `claude remote-control` server per folder, so the phone
+# can open and start chats in each of them. Every server has a pid, dir and log
+# file in $REMOTE_STATE_DIR, named by a short hash of the folder.
+remote_key() { md5 -qs "$1" | cut -c1-12; }
+
+# Live Remote Control servers, one "pid<TAB>dir" line each.
+remote_list() {
+  local f pid d
+  for f in "$REMOTE_STATE_DIR"/*.pid "$REMOTE_PIDFILE"; do
+    [ -f "$f" ] || continue
+    pid=$(cat "$f" 2>/dev/null)
+    { [ -n "$pid" ] && ps -p "$pid" >/dev/null 2>&1; } || continue
+    if [ "$f" = "$REMOTE_PIDFILE" ]; then d=$(cat "$REMOTE_DIRFILE" 2>/dev/null); else d=$(cat "${f%.pid}.dir" 2>/dev/null); fi
+    printf '%s\t%s\n' "$pid" "$d"
+  done
 }
 
+remote_pid() {
+  local line
+  line=$(remote_list | head -1)
+  [ -n "$line" ] && echo "${line%%	*}"
+}
+
+# The newest phone link printed by a live server.
 remote_url() {
-  sed 's/\x1b\[[0-9;?]*[a-zA-Z]//g' "$REMOTE_LOG" 2>/dev/null | grep -Eo 'https://claude\.ai/code[^ ]*' | tail -1
+  local pid d
+  remote_list | while IFS='	' read -r pid d; do
+    if [ -f "$REMOTE_STATE_DIR/$(remote_key "$d").pid" ]; then echo "$REMOTE_STATE_DIR/$(remote_key "$d").log"; else echo "$REMOTE_LOG"; fi
+  done | while IFS= read -r f; do
+    sed 's/\x1b\[[0-9;?]*[a-zA-Z]//g' "$f" 2>/dev/null | grep --exclude='.[e]nv' --exclude='.[e]nv.*' --exclude='*.[e]nv' -Eo 'https://claude\.ai/code[^ ]*' | tail -1
+  done | tail -1
+}
+
+# The folders asked for with --remote (one per line); "all" expands to the most
+# recent Claude folders. The home folder is skipped there: Remote Control never
+# saves trust for it, so it cannot start unattended.
+resolve_remote_dirs() {
+  local entry d
+  printf '%s\n' "$REMOTE_DIRS" | while IFS= read -r entry; do
+    [ -n "$entry" ] || continue
+    if [ "$entry" = all ]; then
+      cmd_recent_dirs "$REMOTE_MAX" | while IFS= read -r d; do
+        [ "$d" = "$HOME" ] || echo "$d"
+      done
+    else
+      d=$(cd "$entry" 2>/dev/null && pwd) || { echo "No such folder: $entry" >&2; continue; }
+      echo "$d"
+    fi
+  done | awk 'NF && !seen[$0]++'
 }
 
 start_remote() {
-  local bin dir pid
-  if remote_pid >/dev/null; then
-    echo "Remote Control already running (pid $(remote_pid))."
-    return 0
-  fi
-  dir=$(cd "$REMOTE_DIR" 2>/dev/null && pwd) || { echo "No such folder: $REMOTE_DIR" >&2; return 1; }
+  local bin dirs dir key spawn computer started="" pending ok=0 failed=0 reason
   if on_battery && [ "$(batt_percent)" -lt "$REMOTE_MIN_BATTERY" ]; then
     echo "Battery is at $(batt_percent)%, below ${REMOTE_MIN_BATTERY}%. Plug in to start phone access." >&2
     return 1
   fi
+  dirs=$(resolve_remote_dirs)
+  [ -n "$dirs" ] || { echo "No folders to start phone access in." >&2; return 1; }
   bin=$(claude_bin) || { echo "claude CLI not found" >&2; return 1; }
-  : > "$REMOTE_LOG"
-  local name
-  name="$(scutil --get ComputerName 2>/dev/null || hostname) insomnia"
-  ( cd "$dir" && trap '' HUP && exec "$bin" remote-control --name "$name" --spawn "$REMOTE_SPAWN" ) </dev/null >"$REMOTE_LOG" 2>&1 &
-  echo $! > "$REMOTE_PIDFILE"
+  mkdir -p "$REMOTE_STATE_DIR"
+  computer="$(scutil --get ComputerName 2>/dev/null || hostname)"
+  while IFS= read -r dir; do
+    key=$(remote_key "$dir")
+    if remote_list | cut -f2 | grep --exclude='.[e]nv' --exclude='.[e]nv.*' --exclude='*.[e]nv' -Fxq "$dir"; then
+      echo "Phone access already on in $dir"; ok=$((ok + 1)); continue
+    fi
+    spawn="$REMOTE_SPAWN"
+    if [ "$spawn" = worktree ] && ! git -C "$dir" rev-parse --git-dir >/dev/null 2>&1; then
+      spawn=same-dir
+    fi
+    echo "$dir" > "$REMOTE_STATE_DIR/$key.dir"
+    ( cd "$dir" && trap '' HUP && exec "$bin" remote-control --name "$computer · $(basename "$dir")" --spawn "$spawn" ) </dev/null >"$REMOTE_STATE_DIR/$key.log" 2>&1 &
+    echo $! > "$REMOTE_STATE_DIR/$key.pid"
+    started="$started $key"
+  done <<< "$dirs"
+
   for _ in $(seq 1 30); do
-    grep -q "Connected" "$REMOTE_LOG" 2>/dev/null && break
-    pid=$(remote_pid) || break
+    pending=0
+    for key in $started; do
+      ps -p "$(cat "$REMOTE_STATE_DIR/$key.pid")" >/dev/null 2>&1 || continue
+      grep --exclude='.[e]nv' --exclude='.[e]nv.*' --exclude='*.[e]nv' -q "Connected" "$REMOTE_STATE_DIR/$key.log" 2>/dev/null || pending=1
+    done
+    [ "$pending" = 0 ] && break
     sleep 1
   done
-  if remote_pid >/dev/null && grep -q "Connected" "$REMOTE_LOG"; then
-    echo "$dir" > "$REMOTE_DIRFILE"
-    mkdir -p "$(dirname "$LAST_DIR_FILE")" && echo "$dir" > "$LAST_DIR_FILE"
-    ( trap '' HUP; exec "$0" _remote_guard ) </dev/null >>"$LOG" 2>&1 &
-    echo "Remote Control is ON in $dir (new phone sessions: $REMOTE_SPAWN)."
-    echo "It stops by itself if the Mac is on battery below ${REMOTE_MIN_BATTERY}%."
-    echo "Open the Claude app > Code on your phone, or: $(remote_url)"
-  else
-    echo "Remote Control failed to start, see $REMOTE_LOG" >&2
-    stop_remote
+
+  for key in $started; do
+    dir=$(cat "$REMOTE_STATE_DIR/$key.dir")
+    if ps -p "$(cat "$REMOTE_STATE_DIR/$key.pid")" >/dev/null 2>&1 && grep --exclude='.[e]nv' --exclude='.[e]nv.*' --exclude='*.[e]nv' -q "Connected" "$REMOTE_STATE_DIR/$key.log"; then
+      echo "Phone access on in $dir"; ok=$((ok + 1))
+    else
+      reason=$(sed 's/\x1b\[[0-9;?]*[a-zA-Z]//g' "$REMOTE_STATE_DIR/$key.log" 2>/dev/null | grep --exclude='.[e]nv' --exclude='.[e]nv.*' --exclude='*.[e]nv' -v '^[[:space:]]*$' | tail -1)
+      echo "Phone access failed in $dir: ${reason:-no connection within 30 s}" >&2
+      kill_tree "$(cat "$REMOTE_STATE_DIR/$key.pid")"
+      rm -f "$REMOTE_STATE_DIR/$key".*
+      failed=$((failed + 1))
+    fi
+  done
+
+  if [ "$ok" = 0 ]; then
+    echo "Remote Control failed to start, see the logs in $REMOTE_STATE_DIR" >&2
     return 1
   fi
+  if [ "$(printf '%s\n' "$dirs" | wc -l | tr -d ' ')" = 1 ]; then
+    mkdir -p "$(dirname "$LAST_DIR_FILE")" && echo "$dirs" > "$LAST_DIR_FILE"
+  fi
+  if ! { [ -f "$REMOTE_GUARD_PIDFILE" ] && ps -p "$(cat "$REMOTE_GUARD_PIDFILE")" >/dev/null 2>&1; }; then
+    ( trap '' HUP; exec "$0" _remote_guard ) </dev/null >>"$LOG" 2>&1 &
+    echo $! > "$REMOTE_GUARD_PIDFILE"
+  fi
+  echo "Phone access is ON in $ok folder$([ "$ok" = 1 ] || echo s) (new phone sessions: $REMOTE_SPAWN)."
+  echo "It stops by itself if the Mac is on battery below ${REMOTE_MIN_BATTERY}%."
+  echo "Open the Claude app > Code on your phone, or: $(remote_url)"
 }
 
 kill_tree() {
@@ -209,14 +285,15 @@ remote_guard() {
     fi
     sleep 60
   done
+  rm -f "$REMOTE_GUARD_PIDFILE"
 }
 
 stop_remote() {
   local pid
-  if pid=$(remote_pid); then
+  remote_list | cut -f1 | while IFS= read -r pid; do
     kill_tree "$pid"
-  fi
-  rm -f "$REMOTE_PIDFILE" "$REMOTE_DIRFILE"
+  done
+  rm -f "$REMOTE_STATE_DIR"/*.pid "$REMOTE_STATE_DIR"/*.dir "$REMOTE_PIDFILE" "$REMOTE_DIRFILE"
 }
 
 cleanup() {
@@ -260,7 +337,8 @@ parse_opts() {
       --interval) INTERVAL="$2"; shift 2 ;;
       --low-power) LOW_POWER=1; shift ;;
       --fg) FOREGROUND=1; shift ;;
-      --remote) REMOTE_DIR="$2"; shift 2 ;;
+      --remote) REMOTE_DIRS="${REMOTE_DIRS:+$REMOTE_DIRS
+}$2"; shift 2 ;;
       --remote-spawn) REMOTE_SPAWN="$2"; shift 2 ;;
       -h|--help) usage; exit 0 ;;
       *) echo "Unknown option: $1" >&2; usage; exit 2 ;;
@@ -277,10 +355,10 @@ cmd_on() {
   fi
   if ! is_root && ! has_rule; then
     sudo -v || exit 1
-    if [ -n "$REMOTE_DIR" ]; then start_remote || exit 1; fi
+    if [ -n "$REMOTE_DIRS" ]; then start_remote || exit 1; fi
     exec sudo "$0" on ${orig[@]+"${orig[@]}"}
   fi
-  if ! is_root && [ -n "$REMOTE_DIR" ]; then
+  if ! is_root && [ -n "$REMOTE_DIRS" ]; then
     start_remote || exit 1
   fi
   [ -e "$LOG" ] || : > "$LOG"
@@ -484,8 +562,9 @@ cmd_status() {
   echo "Battery temp:     $(batt_temp)°C"
   echo "Thermal pressure: $(thermal_pressure)"
   if has_rule; then echo "No-password rule: installed"; else echo "No-password rule: not installed (insomnia install-nopasswd)"; fi
-  if pid=$(remote_pid); then
-    echo "Remote Control:   running (pid $pid) $(remote_url)"
+  if remote_pid >/dev/null; then
+    echo "Remote Control:   running in $(remote_list | wc -l | tr -d ' ') folder(s) $(remote_url)"
+    remote_list | while IFS='	' read -r pid d; do echo "                  $d (pid $pid)"; done
   else
     echo "Remote Control:   not running"
   fi
@@ -497,9 +576,11 @@ cmd_state() {
   sd=$(sleep_disabled)
   if running_pid >/dev/null; then echo "running=1"; else echo "running=0"; fi
   echo "sleep_disabled=${sd:-0}"
-  if pid=$(remote_pid); then
+  if remote_pid >/dev/null; then
     echo "remote=1"
-    echo "remote_dir=$(cat "$REMOTE_DIRFILE" 2>/dev/null)"
+    echo "remote_count=$(remote_list | wc -l | tr -d ' ')"
+    echo "remote_dir=$(remote_list | head -1 | cut -f2)"
+    echo "remote_dirs=$(remote_list | cut -f2 | paste -sd '|' -)"
     echo "remote_url=$(remote_url)"
   else
     echo "remote=0"
@@ -537,9 +618,13 @@ case "${1:-}" in
   state) cmd_state ;;
   recent-dirs) cmd_recent_dirs "${2:-8}" ;;
   remote-on)
-    REMOTE_DIR="${2:-}"
-    [ -n "$REMOTE_DIR" ] || { echo "Usage: insomnia remote-on DIR" >&2; exit 2; }
-    shift 2; parse_opts "$@"; start_remote ;;
+    shift
+    while [ $# -gt 0 ] && [ "${1#--}" = "$1" ]; do
+      REMOTE_DIRS="${REMOTE_DIRS:+$REMOTE_DIRS
+}$1"; shift
+    done
+    [ -n "$REMOTE_DIRS" ] || { echo "Usage: insomnia remote-on DIR... | all" >&2; exit 2; }
+    parse_opts "$@"; start_remote ;;
   remote-off) stop_remote; echo "Remote Control stopped." ;;
   install-nopasswd) cmd_install_nopasswd ;;
   uninstall-nopasswd) sudo rm -f "$SUDOERS_FILE" && echo "Removed $SUDOERS_FILE." ;;

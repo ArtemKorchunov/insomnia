@@ -23,7 +23,7 @@ When the user asks you to set up, install, or use Insomnia, follow this plan.
 ## 3. Everyday use
 
 - Start: `insomnia on` (options: `--hours N`, `--low-power`, `--max-temp C`, `--min-battery P`).
-- With phone access: `insomnia on --remote <folder>`. Pick the folder the user wants to work in from the phone; `insomnia recent-dirs` lists folders of recent Claude Code sessions. Phone access needs the `claude` CLI signed in with a claude.ai plan.
+- With phone access: `insomnia on --remote <folder>`. Pick the folder the user wants to work in from the phone, or `--remote all` when they want every recent folder (and all their chats) reachable from the phone; `insomnia recent-dirs` lists folders of recent Claude Code sessions. Phone access needs the `claude` CLI signed in with a claude.ai plan.
 - Stop: `insomnia off`. Phone access keeps running so phone chats stay connected; `insomnia off --all` or `insomnia remote-off` stops it.
 - Check: `insomnia status` (human) or `insomnia state` (key=value). Report plainly: running or not, sleep disabled or not, lid, battery %, battery temperature, thermal pressure, phone access.
 
@@ -36,7 +36,7 @@ If the user worries about heat, run `insomnia status` and give the real numbers.
 - Menu bar icon missing on a notched MacBook: the right side of the menu bar has limited room and overflowing items hide behind the notch. The app pins itself 260 pt from the right edge; other wide items (meeting titles, etc.) may need to be removed from the menu bar.
 - `insomnia status` warns that sleep is disabled with no watchdog: the heal agent fixes it within a minute if it is installed (`insomnia heal-agent status`) and the no-password rule is in place; otherwise run `insomnia off`, or `insomnia heal-agent install`.
 - Phone chats show "Remote Control disconnected": the Mac slept or Remote Control was stopped. Wake the Mac, or run `insomnia remote-on <same folder>` to reconnect preserved sessions.
-- Logs: `/tmp/insomnia-watchdog.log`, `/tmp/insomnia-remote.log`.
+- Logs: `/tmp/insomnia-watchdog.log`, `/tmp/insomnia-remote.d/*.log` (one per phone folder).
 
 ## Working on the code
 
