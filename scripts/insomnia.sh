@@ -177,7 +177,7 @@ remote_url() {
   remote_list | while IFS='	' read -r pid d; do
     if [ -f "$REMOTE_STATE_DIR/$(remote_key "$d").pid" ]; then echo "$REMOTE_STATE_DIR/$(remote_key "$d").log"; else echo "$REMOTE_LOG"; fi
   done | while IFS= read -r f; do
-    sed 's/\x1b\[[0-9;?]*[a-zA-Z]//g' "$f" 2>/dev/null | grep --exclude='.[e]nv' --exclude='.[e]nv.*' --exclude='*.[e]nv' -Eo 'https://claude\.ai/code[^ ]*' | tail -1
+    sed 's/\x1b\[[0-9;?]*[a-zA-Z]//g' "$f" 2>/dev/null | grep -Eo 'https://claude\.ai/code[^ ]*' | tail -1
   done | tail -1
 }
 
@@ -212,7 +212,7 @@ start_remote() {
   computer="$(scutil --get ComputerName 2>/dev/null || hostname)"
   while IFS= read -r dir; do
     key=$(remote_key "$dir")
-    if remote_list | cut -f2 | grep --exclude='.[e]nv' --exclude='.[e]nv.*' --exclude='*.[e]nv' -Fxq "$dir"; then
+    if remote_list | cut -f2 | grep -Fxq "$dir"; then
       echo "Phone access already on in $dir"; ok=$((ok + 1)); continue
     fi
     spawn="$REMOTE_SPAWN"
@@ -229,7 +229,7 @@ start_remote() {
     pending=0
     for key in $started; do
       ps -p "$(cat "$REMOTE_STATE_DIR/$key.pid")" >/dev/null 2>&1 || continue
-      grep --exclude='.[e]nv' --exclude='.[e]nv.*' --exclude='*.[e]nv' -q "Connected" "$REMOTE_STATE_DIR/$key.log" 2>/dev/null || pending=1
+      grep -qE "Connected|Ready" "$REMOTE_STATE_DIR/$key.log" 2>/dev/null || pending=1
     done
     [ "$pending" = 0 ] && break
     sleep 1
@@ -237,10 +237,10 @@ start_remote() {
 
   for key in $started; do
     dir=$(cat "$REMOTE_STATE_DIR/$key.dir")
-    if ps -p "$(cat "$REMOTE_STATE_DIR/$key.pid")" >/dev/null 2>&1 && grep --exclude='.[e]nv' --exclude='.[e]nv.*' --exclude='*.[e]nv' -q "Connected" "$REMOTE_STATE_DIR/$key.log"; then
+    if ps -p "$(cat "$REMOTE_STATE_DIR/$key.pid")" >/dev/null 2>&1 && grep -qE "Connected|Ready" "$REMOTE_STATE_DIR/$key.log"; then
       echo "Phone access on in $dir"; ok=$((ok + 1))
     else
-      reason=$(sed 's/\x1b\[[0-9;?]*[a-zA-Z]//g' "$REMOTE_STATE_DIR/$key.log" 2>/dev/null | grep --exclude='.[e]nv' --exclude='.[e]nv.*' --exclude='*.[e]nv' -v '^[[:space:]]*$' | tail -1)
+      reason=$(sed 's/\x1b\[[0-9;?]*[a-zA-Z]//g' "$REMOTE_STATE_DIR/$key.log" 2>/dev/null | grep -v '^[[:space:]]*$' | tail -1)
       echo "Phone access failed in $dir: ${reason:-no connection within 30 s}" >&2
       kill_tree "$(cat "$REMOTE_STATE_DIR/$key.pid")"
       rm -f "$REMOTE_STATE_DIR/$key".*
@@ -298,7 +298,9 @@ stop_remote() {
 
 cleanup() {
   trap - EXIT INT TERM HUP
-  [ -n "$CAFF_PID" ] && kill "$CAFF_PID" 2>/dev/null
+  if [ -n "$CAFF_PID" ]; then
+    { kill "$CAFF_PID"; wait "$CAFF_PID"; } 2>/dev/null
+  fi
   priv /usr/bin/pmset -a disablesleep 0
   [ -n "$ORIG_PM_BATT" ] && priv /usr/bin/pmset -b powermode "$ORIG_PM_BATT"
   [ -n "$ORIG_PM_AC" ] && priv /usr/bin/pmset -c powermode "$ORIG_PM_AC"
@@ -347,11 +349,18 @@ parse_opts() {
 }
 
 cmd_on() {
-  local orig=("$@") pid
+  local orig=("$@") pid pct reason
   parse_opts "$@"
   if pid=$(running_pid); then
     echo "Already running (pid $pid). Use 'insomnia off' to stop it." >&2
     exit 1
+  fi
+  if on_battery; then
+    pct=$(batt_percent)
+    if [ -n "$pct" ] && [ "$pct" -lt "$MIN_BATTERY" ]; then
+      echo "Battery is at ${pct}%, below the ${MIN_BATTERY}% minimum, so the watchdog would stop again right away. Plug in the charger, or start with a lower limit (insomnia on --min-battery N)." >&2
+      exit 1
+    fi
   fi
   if ! is_root && ! has_rule; then
     sudo -v || exit 1
@@ -373,7 +382,8 @@ cmd_on() {
       echo "Turn it off with: insomnia off   (log: $LOG)"
     else
       stop_remote
-      echo "Failed to start, see $LOG" >&2
+      reason=$(tail -n 5 "$LOG" 2>/dev/null | sed -n 's/.*normal sleep restored (\(.*\))$/\1/p' | tail -1)
+      echo "Failed to start${reason:+: $reason}. See $LOG" >&2
       exit 1
     fi
   fi
