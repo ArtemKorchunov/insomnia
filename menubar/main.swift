@@ -3,26 +3,11 @@ import ServiceManagement
 import IOKit
 import SwiftUI
 import UserNotifications
-import CoreImage
 
 let scriptPath = NSHomeDirectory() + "/.local/bin/insomnia"
 let legacyLaunchAgentPath = NSHomeDirectory() + "/Library/LaunchAgents/io.github.artemkorchunov.insomnia.plist"
 let homePrefix = NSHomeDirectory()
 let stopChoices = [0, 1, 2, 4, 8, 12]
-
-/// A crisp QR code for a link, so the phone's camera can open it.
-func qrImage(for text: String, size: CGFloat = 180) -> NSImage? {
-    guard let filter = CIFilter(name: "CIQRCodeGenerator") else { return nil }
-    filter.setValue(Data(text.utf8), forKey: "inputMessage")
-    filter.setValue("M", forKey: "inputCorrectionLevel")
-    guard let output = filter.outputImage else { return nil }
-    let scale = size / output.extent.width
-    let scaled = output.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
-    let rep = NSCIImageRep(ciImage: scaled)
-    let image = NSImage(size: rep.size)
-    image.addRepresentation(rep)
-    return image
-}
 
 func tildePath(_ path: String) -> String {
     path.hasPrefix(homePrefix) ? "~" + path.dropFirst(homePrefix.count) : path
@@ -500,33 +485,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject, UNUs
         }
     }
 
-    /// Each phone folder with the link that opens a new chat there.
-    var phoneLinks: [PhoneLink] {
-        (state["remote_links"] ?? "").split(separator: "|").compactMap { item in
-            let parts = item.split(separator: ">", maxSplits: 1).map(String.init)
-            return parts.count == 2 ? PhoneLink(dir: parts[0], url: parts[1]) : nil
-        }
-    }
-
-    var phoneCodeWindow: NSWindow?
-
-    // Its own small window rather than a popover inside the panel, so it stays
-    // up while the phone is pointed at it.
-    func showPhoneCode() {
-        closePopover()
-        if phoneCodeWindow == nil {
-            let window = NSWindow(contentViewController: NSHostingController(rootView: PhoneCodeView(app: self)))
-            window.title = "Start a Chat from Your Phone"
-            window.styleMask = [.titled, .closable]
-            window.isReleasedWhenClosed = false
-            window.level = .floating
-            window.center()
-            phoneCodeWindow = window
-        }
-        NSApp.activate(ignoringOtherApps: true)
-        phoneCodeWindow?.makeKeyAndOrderFront(nil)
-    }
-
     func copyLink() {
         guard let url = state["remote_url"], !url.isEmpty else { return }
         NSPasteboard.general.clearContents()
@@ -707,17 +665,12 @@ struct PanelView: View {
                 .frame(width: 18)
             VStack(alignment: .leading, spacing: 2) {
                 Text(app.remoteOn ? phoneSummary : "Phone access off").font(.callout.weight(.medium))
-                Text(app.remoteOn ? "Scan the code, or open the Claude app."
+                Text(app.remoteOn ? "On your phone: Claude app, Code, then this Mac."
                                   : "Lets your phone open and start Claude chats on this Mac.")
                     .font(.caption).foregroundStyle(.secondary)
                     .lineLimit(2, reservesSpace: true)
             }
             Spacer(minLength: 0)
-            if app.remoteOn {
-                Button { app.showPhoneCode() } label: { Image(systemName: "qrcode") }
-                    .help("Show a code your phone's camera can scan to start a chat")
-                    .disabled(app.phoneLinks.isEmpty)
-            }
             Menu {
                 if app.remoteOn {
                     Button("Copy Phone Link") { app.copyLink() }
@@ -784,59 +737,6 @@ struct PanelView: View {
             Button("Quit") { NSApp.terminate(nil) }
         }
         .controlSize(.small)
-    }
-}
-
-struct PhoneLink: Hashable {
-    let dir: String
-    let url: String
-    var name: String { URL(fileURLWithPath: dir).lastPathComponent }
-}
-
-/// A QR code per phone folder: scanning it opens a new Claude chat in that
-/// folder on this Mac.
-struct PhoneCodeView: View {
-    @ObservedObject var app: AppDelegate
-    @AppStorage("phoneCodeDir") var chosen = ""
-
-    var current: PhoneLink? {
-        app.phoneLinks.first { $0.dir == chosen } ?? app.phoneLinks.first
-    }
-
-    var body: some View {
-        VStack(spacing: 12) {
-            if let link = current {
-                if app.phoneLinks.count > 1 {
-                    Picker("Folder", selection: Binding(get: { link.dir }, set: { chosen = $0 })) {
-                        ForEach(app.phoneLinks, id: \.dir) { Text($0.name).tag($0.dir) }
-                    }
-                    .labelsHidden()
-                }
-                if let image = qrImage(for: link.url, size: 220) {
-                    Image(nsImage: image)
-                        .interpolation(.none)
-                        .resizable()
-                        .frame(width: 220, height: 220)
-                        .padding(12)
-                        .background(Color.white, in: RoundedRectangle(cornerRadius: 12))
-                }
-                Text("Scan with your phone's camera to start a new chat in \(link.name) on this Mac.")
-                    .font(.callout).multilineTextAlignment(.center)
-                    .lineLimit(3, reservesSpace: true)
-                Text(tildePath(link.dir)).font(.caption).foregroundStyle(.secondary)
-                    .lineLimit(1).truncationMode(.middle)
-                Button("Copy Link") {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(link.url, forType: .string)
-                }
-                .controlSize(.small)
-            } else {
-                Text("Phone access is off, so there is nothing to scan.")
-                    .font(.callout).foregroundStyle(.secondary)
-            }
-        }
-        .padding(18)
-        .frame(width: 290)
     }
 }
 

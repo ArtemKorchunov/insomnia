@@ -196,18 +196,6 @@ remote_url() {
   done | tail -1
 }
 
-# One "folder<TAB>link" per running server. The link is the server's own
-# claude.ai/code?environment=... address, which opens a new chat in that folder.
-remote_links() {
-  local pid d f u
-  remote_list | while IFS='	' read -r pid d; do
-    f="$REMOTE_STATE_DIR/$(remote_key "$d").log"
-    [ -f "$REMOTE_STATE_DIR/$(remote_key "$d").pid" ] || f="$REMOTE_LOG"
-    u=$(sed 's/\x1b\[[0-9;?]*[a-zA-Z]//g' "$f" 2>/dev/null | grep --exclude='.[e]nv' --exclude='.[e]nv.*' --exclude='*.[e]nv' -Eo 'https://claude\.ai/code\?environment=[A-Za-z0-9_]+' | tail -1)
-    [ -n "$u" ] && printf '%s\t%s\n' "$d" "$u"
-  done
-}
-
 # The folders asked for with --remote (one per line); "all" expands to the most
 # recent Claude folders. The home folder is skipped there: Remote Control never
 # saves trust for it, so it cannot start unattended.
@@ -758,7 +746,6 @@ cmd_state() {
     echo "remote_dir=$(remote_list | head -1 | cut -f2)"
     echo "remote_dirs=$(remote_list | cut -f2 | paste -sd '|' -)"
     echo "remote_url=$(remote_url)"
-    echo "remote_links=$(remote_links | tr '\t' '>' | paste -sd '|' -)"
   else
     echo "remote=0"
   fi
