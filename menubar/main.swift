@@ -3,11 +3,26 @@ import ServiceManagement
 import IOKit
 import SwiftUI
 import UserNotifications
+import CoreImage
 
 let scriptPath = NSHomeDirectory() + "/.local/bin/insomnia"
 let legacyLaunchAgentPath = NSHomeDirectory() + "/Library/LaunchAgents/io.github.artemkorchunov.insomnia.plist"
 let homePrefix = NSHomeDirectory()
 let stopChoices = [0, 1, 2, 4, 8, 12]
+
+/// A crisp QR code for a link, so the phone's camera can open it.
+func qrImage(for text: String, size: CGFloat = 180) -> NSImage? {
+    guard let filter = CIFilter(name: "CIQRCodeGenerator") else { return nil }
+    filter.setValue(Data(text.utf8), forKey: "inputMessage")
+    filter.setValue("M", forKey: "inputCorrectionLevel")
+    guard let output = filter.outputImage else { return nil }
+    let scale = size / output.extent.width
+    let scaled = output.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+    let rep = NSCIImageRep(ciImage: scaled)
+    let image = NSImage(size: rep.size)
+    image.addRepresentation(rep)
+    return image
+}
 
 func tildePath(_ path: String) -> String {
     path.hasPrefix(homePrefix) ? "~" + path.dropFirst(homePrefix.count) : path
@@ -519,6 +534,7 @@ let nightAccent = Color(red: 0.42, green: 0.40, blue: 0.95)
 
 struct PanelView: View {
     @ObservedObject var app: AppDelegate
+    @State var showQR = false
     // Everything on one page, settings included: nothing opens or collapses, so
     // the panel never changes size and nothing on it moves.
     var body: some View {
@@ -657,6 +673,11 @@ struct PanelView: View {
                     .lineLimit(2, reservesSpace: true)
             }
             Spacer(minLength: 0)
+            if app.remoteOn, let url = app.state["remote_url"], !url.isEmpty {
+                Button { showQR.toggle() } label: { Image(systemName: "qrcode") }
+                    .help("Show a code to scan with your phone")
+                    .popover(isPresented: $showQR, arrowEdge: .bottom) { qrCard(url) }
+            }
             Menu {
                 if app.remoteOn {
                     Button("Copy Phone Link") { app.copyLink() }
@@ -685,6 +706,26 @@ struct PanelView: View {
             .menuStyle(.borderedButton)
             .frame(width: 84)
         }
+    }
+
+    func qrCard(_ url: String) -> some View {
+        VStack(spacing: 10) {
+            if let image = qrImage(for: url) {
+                Image(nsImage: image)
+                    .interpolation(.none)
+                    .resizable()
+                    .frame(width: 180, height: 180)
+                    .padding(10)
+                    .background(Color.white, in: RoundedRectangle(cornerRadius: 10))
+            }
+            Text("Point your phone's camera here to open Claude on this Mac.")
+                .font(.callout).multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+            Button("Copy Link Instead") { app.copyLink(); showQR = false }
+                .controlSize(.small)
+        }
+        .padding(14)
+        .frame(width: 230)
     }
 
     var phoneSummary: String {
