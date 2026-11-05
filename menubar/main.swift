@@ -603,8 +603,22 @@ struct PanelView: View {
         return "Awake"
     }
 
+    /// When the battery guard will stop it, from macOS's time-to-empty estimate
+    /// scaled down to the minimum it stops at. Nil on the charger.
+    var batteryStop: Date? {
+        guard app.isRunning, app.state["power"] != "AC",
+              let mins = Double(app.state["batt_minutes"] ?? ""), mins > 0,
+              let pct = Double(app.state["battery"] ?? ""), pct > 0 else { return nil }
+        let floor = Double(app.state["min_battery"] ?? "20") ?? 20
+        guard pct > floor else { return nil }
+        return app.now.addingTimeInterval(mins * 60 * (pct - floor) / pct)
+    }
+
     var heroSubtitle: String {
         if app.busy { return "Changing sleep settings" }
+        if let stop = batteryStop, app.deadline.map({ stop < $0 }) ?? true {
+            return "On battery: sleeps around \(stop.formatted(date: .omitted, time: .shortened)) at \(app.state["min_battery"] ?? "20")%. Plug in to go longer."
+        }
         if app.isRunning {
             if let end = app.deadline {
                 return "Sleeps at \(end.formatted(date: .omitted, time: .shortened)). Safe to close the lid."

@@ -753,6 +753,8 @@ cmd_state() {
   echo "power=$(power_source)"
   echo "battery=$(batt_percent)"
   echo "temp=$(batt_temp)"
+  # macOS's own time-to-empty estimate, in minutes (empty while charging or still estimating).
+  echo "batt_minutes=$(pmset -g batt 2>/dev/null | sed -n 's/.*discharging; \([0-9]*\):\([0-9][0-9]\) remaining.*/\1 \2/p' | awk '{print $1*60+$2}')"
   if has_rule; then echo "nopasswd=1"; else echo "nopasswd=0"; fi
   echo "min_battery=$MIN_BATTERY"
   echo "max_temp=$MAX_BATT_TEMP"
