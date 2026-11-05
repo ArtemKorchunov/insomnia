@@ -392,7 +392,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     /// with it (phone access keeps running across the restart).
     func setHours(_ h: Int) {
         hours = h
-        guard isRunning else { return }
+        // Off: picking a time is the start button, so one click starts a session.
+        guard isRunning else { turnOn(dir: nil); return }
         if limitFixed {
             restart()
         } else {
@@ -600,7 +601,7 @@ struct PanelView: View {
     var durationRow: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text(app.isRunning ? "Stay awake for" : "When on, stay awake for").font(.callout.weight(.medium))
+                Text(app.isRunning ? "Stay awake for" : "Turn on for").font(.callout.weight(.medium))
                 Spacer()
                 let canExtend = app.isRunning && app.deadline != nil && !app.busy
                 Button("+1 h") { app.extendByOneHour() }
@@ -609,7 +610,8 @@ struct PanelView: View {
                     .disabled(!canExtend)
                     .opacity(canExtend ? 1 : 0)
             }
-            Picker("Stay awake for", selection: Binding(get: { app.hours }, set: { app.setHours($0) })) {
+            // Off, nothing is selected, so every segment (even the remembered one) starts a session.
+            Picker("Stay awake for", selection: Binding(get: { app.isRunning ? app.hours : -1 }, set: { app.setHours($0) })) {
                 ForEach(stopChoices, id: \.self) { h in Text(h == 0 ? "No limit" : "\(h) h").tag(h) }
             }
             .pickerStyle(.segmented).labelsHidden()
@@ -621,7 +623,7 @@ struct PanelView: View {
     var durationNote: String {
         if app.limitFixed { return "Started before limits could change, so picking one restarts it. Phone access stays on." }
         if app.isRunning { return "Counts from now. Phone access stops with it." }
-        return "Then it sleeps again and phone access stops."
+        return "Pick a time to turn on now. Then it sleeps again and phone access stops."
     }
 
     var phoneRow: some View {
