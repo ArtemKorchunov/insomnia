@@ -500,6 +500,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject, UNUs
         }
     }
 
+    /// Each phone folder with the link that opens a new chat there.
+    var phoneLinks: [PhoneLink] {
+        (state["remote_links"] ?? "").split(separator: "|").compactMap { item in
+            let parts = item.split(separator: ">", maxSplits: 1).map(String.init)
+            return parts.count == 2 ? PhoneLink(dir: parts[0], url: parts[1]) : nil
+        }
+    }
+
+    var phoneCodeWindow: NSWindow?
+
+    // Its own small window rather than a popover inside the panel, so it stays
+    // up while the phone is pointed at it.
+    func showPhoneCode() {
+        closePopover()
+        if phoneCodeWindow == nil {
+            let window = NSWindow(contentViewController: NSHostingController(rootView: PhoneCodeView(app: self)))
+            window.title = "Start a Chat from Your Phone"
+            window.styleMask = [.titled, .closable]
+            window.isReleasedWhenClosed = false
+            window.level = .floating
+            window.center()
+            phoneCodeWindow = window
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        phoneCodeWindow?.makeKeyAndOrderFront(nil)
+    }
+
     func copyLink() {
         guard let url = state["remote_url"], !url.isEmpty else { return }
         NSPasteboard.general.clearContents()
@@ -534,7 +561,6 @@ let nightAccent = Color(red: 0.42, green: 0.40, blue: 0.95)
 
 struct PanelView: View {
     @ObservedObject var app: AppDelegate
-    @State var showQR = false
     // Everything on one page, settings included: nothing opens or collapses, so
     // the panel never changes size and nothing on it moves.
     var body: some View {
@@ -617,7 +643,7 @@ struct PanelView: View {
     var heroSubtitle: String {
         if app.busy { return "Changing sleep settings" }
         if let stop = batteryStop, app.deadline.map({ stop < $0 }) ?? true {
-            return "On battery: sleeps around \(stop.formatted(date: .omitted, time: .shortened)) at \(app.state["min_battery"] ?? "20")%. Plug in to go longer."
+            return "On battery, sleeps near \(stop.formatted(date: .omitted, time: .shortened)) at \(app.state["min_battery"] ?? "20")%."
         }
         if app.isRunning {
             if let end = app.deadline {
@@ -681,16 +707,16 @@ struct PanelView: View {
                 .frame(width: 18)
             VStack(alignment: .leading, spacing: 2) {
                 Text(app.remoteOn ? phoneSummary : "Phone access off").font(.callout.weight(.medium))
-                Text(app.remoteOn ? "Open these chats from the Claude app on your phone."
+                Text(app.remoteOn ? "Scan the code, or open the Claude app."
                                   : "Lets your phone open and start Claude chats on this Mac.")
                     .font(.caption).foregroundStyle(.secondary)
                     .lineLimit(2, reservesSpace: true)
             }
             Spacer(minLength: 0)
-            if app.remoteOn, let url = app.state["remote_url"], !url.isEmpty {
-                Button { showQR.toggle() } label: { Image(systemName: "qrcode") }
-                    .help("Show a code to scan with your phone")
-                    .popover(isPresented: $showQR, arrowEdge: .bottom) { qrCard(url) }
+            if app.remoteOn {
+                Button { app.showPhoneCode() } label: { Image(systemName: "qrcode") }
+                    .help("Show a code your phone's camera can scan to start a chat")
+                    .disabled(app.phoneLinks.isEmpty)
             }
             Menu {
                 if app.remoteOn {
@@ -720,26 +746,6 @@ struct PanelView: View {
             .menuStyle(.borderedButton)
             .frame(width: 84)
         }
-    }
-
-    func qrCard(_ url: String) -> some View {
-        VStack(spacing: 10) {
-            if let image = qrImage(for: url) {
-                Image(nsImage: image)
-                    .interpolation(.none)
-                    .resizable()
-                    .frame(width: 180, height: 180)
-                    .padding(10)
-                    .background(Color.white, in: RoundedRectangle(cornerRadius: 10))
-            }
-            Text("Point your phone's camera here to open Claude on this Mac.")
-                .font(.callout).multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-            Button("Copy Link Instead") { app.copyLink(); showQR = false }
-                .controlSize(.small)
-        }
-        .padding(14)
-        .frame(width: 230)
     }
 
     var phoneSummary: String {
@@ -778,6 +784,59 @@ struct PanelView: View {
             Button("Quit") { NSApp.terminate(nil) }
         }
         .controlSize(.small)
+    }
+}
+
+struct PhoneLink: Hashable {
+    let dir: String
+    let url: String
+    var name: String { URL(fileURLWithPath: dir).lastPathComponent }
+}
+
+/// A QR code per phone folder: scanning it opens a new Claude chat in that
+/// folder on this Mac.
+struct PhoneCodeView: View {
+    @ObservedObject var app: AppDelegate
+    @AppStorage("phoneCodeDir") var chosen = ""
+
+    var current: PhoneLink? {
+        app.phoneLinks.first { $0.dir == chosen } ?? app.phoneLinks.first
+    }
+
+    var body: some View {
+        VStack(spacing: 12) {
+            if let link = current {
+                if app.phoneLinks.count > 1 {
+                    Picker("Folder", selection: Binding(get: { link.dir }, set: { chosen = $0 })) {
+                        ForEach(app.phoneLinks, id: \.dir) { Text($0.name).tag($0.dir) }
+                    }
+                    .labelsHidden()
+                }
+                if let image = qrImage(for: link.url, size: 220) {
+                    Image(nsImage: image)
+                        .interpolation(.none)
+                        .resizable()
+                        .frame(width: 220, height: 220)
+                        .padding(12)
+                        .background(Color.white, in: RoundedRectangle(cornerRadius: 12))
+                }
+                Text("Scan with your phone's camera to start a new chat in \(link.name) on this Mac.")
+                    .font(.callout).multilineTextAlignment(.center)
+                    .lineLimit(3, reservesSpace: true)
+                Text(tildePath(link.dir)).font(.caption).foregroundStyle(.secondary)
+                    .lineLimit(1).truncationMode(.middle)
+                Button("Copy Link") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(link.url, forType: .string)
+                }
+                .controlSize(.small)
+            } else {
+                Text("Phone access is off, so there is nothing to scan.")
+                    .font(.callout).foregroundStyle(.secondary)
+            }
+        }
+        .padding(18)
+        .frame(width: 290)
     }
 }
 
