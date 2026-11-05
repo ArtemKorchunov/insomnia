@@ -519,27 +519,9 @@ let nightAccent = Color(red: 0.42, green: 0.40, blue: 0.95)
 
 struct PanelView: View {
     @ObservedObject var app: AppDelegate
-    @State var showSettings = false
-
-    // Settings is a second page laid over the main one. Both are always laid out,
-    // so the panel keeps the main page's size and nothing above or below moves.
+    // Everything on one page, settings included: nothing opens or collapses, so
+    // the panel never changes size and nothing on it moves.
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            mainPage
-                .opacity(showSettings ? 0 : 1)
-                .offset(x: showSettings ? -24 : 0)
-                .allowsHitTesting(!showSettings)
-            settingsPage
-                .opacity(showSettings ? 1 : 0)
-                .offset(x: showSettings ? 0 : 24)
-                .allowsHitTesting(showSettings)
-        }
-        .padding(16)
-        .frame(width: 340)
-        .animation(.easeOut(duration: 0.18), value: showSettings)
-    }
-
-    var mainPage: some View {
         VStack(alignment: .leading, spacing: 14) {
             hero
             if let warning {
@@ -551,17 +533,7 @@ struct PanelView: View {
             phoneRow
             safetyRow
             Divider()
-            pageButton("Settings", systemImage: "chevron.right", trailing: true) { showSettings = true }
-            Divider()
-            footer
-        }
-    }
-
-    var settingsPage: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            pageButton("Settings", systemImage: "chevron.left", trailing: false) { showSettings = false }
-                .font(.headline)
-            VStack(spacing: 10) {
+            VStack(spacing: 8) {
                 switchRow(app.isRunning ? "Low Power Mode (from next start)" : "Low Power Mode while on",
                           Binding(get: { app.lowPower }, set: { app.lowPower = $0 }))
                 switchRow("Phone chats in separate worktrees", Binding(get: { app.worktree }, set: { app.worktree = $0 }))
@@ -569,22 +541,11 @@ struct PanelView: View {
                 switchRow("Lock screen when the lid closes", Binding(get: { app.lockOnLidClose }, set: { app.lockOnLidClose = $0 }))
                 switchRow("Open at login", Binding(get: { app.openAtLogin }, set: { app.setOpenAtLogin($0) }))
             }
-            Spacer(minLength: 0)
+            Divider()
+            footer
         }
-    }
-
-    /// A full-width row that reads as one button: label plus chevron.
-    func pageButton(_ title: String, systemImage: String, trailing: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                if !trailing { Image(systemName: systemImage).foregroundStyle(.secondary) }
-                Text(title).font(.callout.weight(.medium))
-                Spacer()
-                if trailing { Image(systemName: systemImage).foregroundStyle(.secondary) }
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
+        .padding(16)
+        .frame(width: 340)
     }
 
     // The one thing worth looking at: on or off, and how long it has left.
