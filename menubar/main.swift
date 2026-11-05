@@ -61,6 +61,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     }
     var lidWasClosed = lidIsClosed()
     var activity: NSObjectProtocol?
+    var showTimeInMenuBar: Bool {
+        get { defaults.object(forKey: "showTimeInMenuBar") as? Bool ?? true }
+        set { defaults.set(newValue, forKey: "showTimeInMenuBar"); objectWillChange.send(); updateIcon() }
+    }
     var lockOnLidClose: Bool {
         get { defaults.object(forKey: "lockOnLidClose") as? Bool ?? true }
         set { defaults.set(newValue, forKey: "lockOnLidClose"); objectWillChange.send() }
@@ -250,6 +254,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         image?.accessibilityDescription = tip
         statusItem.button?.image = image
         statusItem.button?.toolTip = tip
+        // The time left sits next to the eye, so "when does it stop" needs no click.
+        // Only while a limit runs: the bar right of the notch has little room.
+        var title = ""
+        if !busy, isRunning, showTimeInMenuBar, let end = deadline {
+            let minutes = max(0, Int(end.timeIntervalSinceNow / 60))
+            title = minutes >= 60 ? String(format: "%d:%02d", minutes / 60, minutes % 60) : "\(minutes)m"
+        }
+        statusItem.button?.title = title
+        statusItem.button?.imagePosition = title.isEmpty ? .imageOnly : .imageLeading
+        statusItem.button?.font = NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize - 1, weight: .medium)
+        statusItem.length = title.isEmpty ? 30 : NSStatusItem.variableLength
     }
 
     func setBusy(_ value: Bool) {
@@ -492,6 +507,7 @@ struct PanelView: View {
                 switchRow(app.isRunning ? "Low Power Mode (from next start)" : "Low Power Mode while on",
                           Binding(get: { app.lowPower }, set: { app.lowPower = $0 }))
                 switchRow("Phone chats in separate worktrees", Binding(get: { app.worktree }, set: { app.worktree = $0 }))
+                switchRow("Time left in the menu bar", Binding(get: { app.showTimeInMenuBar }, set: { app.showTimeInMenuBar = $0 }))
                 switchRow("Lock screen when the lid closes", Binding(get: { app.lockOnLidClose }, set: { app.lockOnLidClose = $0 }))
                 switchRow("Open at login", Binding(get: { app.openAtLogin }, set: { app.setOpenAtLogin($0) }))
             }
