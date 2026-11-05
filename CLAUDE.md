@@ -36,7 +36,7 @@ If the user worries about heat, run `insomnia status` and give the real numbers.
 - Menu bar icon missing on a notched MacBook: the right side of the menu bar has limited room and overflowing items hide behind the notch. The app pins itself 260 pt from the right edge; other wide items (meeting titles, etc.) may need to be removed from the menu bar.
 - `insomnia status` warns that sleep is disabled with no watchdog: the heal agent fixes it within a minute if it is installed (`insomnia heal-agent status`) and the no-password rule is in place; otherwise run `insomnia off`, or `insomnia heal-agent install`.
 - Phone chats show "Remote Control disconnected": the Mac slept or Remote Control was stopped. Wake the Mac, or run `insomnia remote-on <same folder>` to reconnect preserved sessions.
-- Logs: `/tmp/insomnia-watchdog.log`, `/tmp/insomnia-remote.d/*.log` (one per phone folder).
+- Logs: `/tmp/insomnia-watchdog.log`, `/tmp/insomnia-remote.d/*.log` (one per phone folder); a folder that failed to start keeps its log in `~/Library/Logs/Insomnia/`, and `insomnia status` lists them.
 
 ## Working on the code
 

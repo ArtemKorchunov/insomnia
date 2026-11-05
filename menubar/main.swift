@@ -1,10 +1,12 @@
 import Cocoa
 import ServiceManagement
 import IOKit
+import SwiftUI
 
 let scriptPath = NSHomeDirectory() + "/.local/bin/insomnia"
 let legacyLaunchAgentPath = NSHomeDirectory() + "/Library/LaunchAgents/io.github.artemkorchunov.insomnia.plist"
 let homePrefix = NSHomeDirectory()
+let stopChoices = [0, 1, 2, 4, 8, 12]
 
 func tildePath(_ path: String) -> String {
     path.hasPrefix(homePrefix) ? "~" + path.dropFirst(homePrefix.count) : path
@@ -35,38 +37,49 @@ func shellQuote(_ s: String) -> String {
     "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
 }
 
-final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     var statusItem: NSStatusItem!
-    let menu = NSMenu()
-    var state: [String: String] = [:]
-    var recentDirs: [String] = []
+    let popover = NSPopover()
+    @Published var state: [String: String] = [:]
+    @Published var recentDirs: [String] = []
+    @Published var busy = false
+    @Published var now = Date()
     var userPath = "/usr/bin:/bin:/usr/sbin:/sbin"
-    var busy = false
     let defaults = UserDefaults.standard
 
     var hours: Int {
         get { defaults.integer(forKey: "hours") }
-        set { defaults.set(newValue, forKey: "hours") }
+        set { defaults.set(newValue, forKey: "hours"); objectWillChange.send() }
     }
     var lowPower: Bool {
         get { defaults.bool(forKey: "lowPower") }
-        set { defaults.set(newValue, forKey: "lowPower") }
+        set { defaults.set(newValue, forKey: "lowPower"); objectWillChange.send() }
     }
     var worktree: Bool {
         get { defaults.bool(forKey: "worktree") }
-        set { defaults.set(newValue, forKey: "worktree") }
+        set { defaults.set(newValue, forKey: "worktree"); objectWillChange.send() }
     }
     var lidWasClosed = lidIsClosed()
     var activity: NSObjectProtocol?
     var lockOnLidClose: Bool {
         get { defaults.object(forKey: "lockOnLidClose") as? Bool ?? true }
-        set { defaults.set(newValue, forKey: "lockOnLidClose") }
+        set { defaults.set(newValue, forKey: "lockOnLidClose"); objectWillChange.send() }
     }
     var openAtLogin: Bool { SMAppService.mainApp.status == .enabled }
     var isRunning: Bool { state["running"] == "1" }
     var sleepDisabled: Bool { state["sleep_disabled"] == "1" }
     var remoteOn: Bool { state["remote"] == "1" }
     var noPassword: Bool { state["nopasswd"] == "1" }
+    var remoteDirs: [String] {
+        (state["remote_dirs"] ?? state["remote_dir"] ?? "").split(separator: "|").map(String.init)
+    }
+    /// A session started before limits could change: its stop time is shown but fixed.
+    var limitFixed: Bool { isRunning && state["deadline_fixed"] == "1" }
+    /// When the running session stops on its own; nil for no limit or not known.
+    var deadline: Date? {
+        guard let s = state["deadline"], let t = TimeInterval(s), t > 0 else { return nil }
+        return Date(timeIntervalSince1970: t)
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         if let id = Bundle.main.bundleIdentifier,
@@ -81,8 +94,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: 30)
         statusItem.autosaveName = "insomnia"
         statusItem.behavior = []
-        menu.delegate = self
-        statusItem.menu = menu
+        statusItem.button?.target = self
+        statusItem.button?.action = #selector(togglePopover)
+        popover.behavior = .transient
+        popover.animates = true
+        // The popover takes its size from the SwiftUI content and follows it as
+        // sections expand; without this it opens at a stale size and slides up over
+        // the menu bar.
+        let host = NSHostingController(rootView: PanelView(app: self))
+        host.sizingOptions = [.preferredContentSize]
+        popover.contentViewController = host
         try? FileManager.default.removeItem(atPath: legacyLaunchAgentPath)
         if !defaults.bool(forKey: "loginItemOffered") {
             defaults.set(true, forKey: "loginItemOffered")
@@ -103,6 +124,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { _ in self.refresh() }
         activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiatedAllowingIdleSystemSleep], reason: "Watch the lid to lock the screen")
         Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { _ in self.checkLid() }
+    }
+
+    @objc func togglePopover() {
+        guard let button = statusItem.button else { return }
+        if popover.isShown {
+            popover.performClose(nil)
+            return
+        }
+        refresh()
+        DispatchQueue.global().async {
+            let dirs = self.fetchRecentDirs()
+            DispatchQueue.main.async { self.recentDirs = dirs }
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+    }
+
+    func closePopover() {
+        if popover.isShown { popover.performClose(nil) }
     }
 
     func loginShellPath() -> String? {
@@ -188,6 +228,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let st = self.fetchState()
             DispatchQueue.main.async {
                 self.state = st
+                self.now = Date()
                 self.updateIcon()
             }
         }
@@ -211,135 +252,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusItem.button?.toolTip = tip
     }
 
-    func menuNeedsUpdate(_ menu: NSMenu) {
-        state = fetchState()
-        updateIcon()
-        buildMenu()
-        DispatchQueue.global().async {
-            let dirs = self.fetchRecentDirs()
-            DispatchQueue.main.async { self.recentDirs = dirs }
-        }
-    }
-
-    func addItem(_ menu: NSMenu, _ title: String, _ action: Selector?, enabled: Bool = true, object: Any? = nil, checked: Bool = false) -> NSMenuItem {
-        let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
-        item.target = self
-        item.isEnabled = enabled && action != nil
-        item.representedObject = object
-        item.state = checked ? .on : .off
-        menu.addItem(item)
-        return item
-    }
-
-    func buildMenu() {
-        menu.removeAllItems()
-        menu.autoenablesItems = false
-
-        let header: String
-        if busy {
-            header = "Insomnia: working…"
-        } else if isRunning {
-            header = "Insomnia is ON: Mac stays awake with the lid closed"
-        } else if sleepDisabled {
-            header = "⚠︎ Sleep disabled, but no watchdog is running"
-        } else {
-            header = "Insomnia is OFF: Mac sleeps normally"
-        }
-        _ = addItem(menu, header, nil, enabled: false)
-
-        var info = "Battery \(state["battery"] ?? "?")% · \(state["temp"] ?? "?") °C · \(state["power"] ?? "?")"
-        if let lid = state["lid"] { info += " · lid \(lid)" }
-        _ = addItem(menu, info, nil, enabled: false)
-
-        if remoteOn {
-            let dirs = (state["remote_dirs"] ?? state["remote_dir"] ?? "").split(separator: "|").map { tildePath(String($0)) }
-            if dirs.count > 1 {
-                let item = NSMenuItem(title: "Phone access on in \(dirs.count) folders", action: nil, keyEquivalent: "")
-                let sub = NSMenu()
-                sub.autoenablesItems = false
-                for dir in dirs { _ = addItem(sub, dir, nil, enabled: false) }
-                item.submenu = sub
-                menu.addItem(item)
-            } else {
-                _ = addItem(menu, "Phone access on in \(dirs.first ?? "")", nil, enabled: false)
-            }
-            _ = addItem(menu, "Copy Phone Link", #selector(copyLink))
-        }
-
-        menu.addItem(.separator())
-
-        if isRunning || sleepDisabled {
-            _ = addItem(menu, "Turn Off (phone chats stay connected while awake)", #selector(turnOff), enabled: !busy)
-        }
-        if remoteOn {
-            _ = addItem(menu, "Stop Phone Access", #selector(stopPhoneAccess), enabled: !busy)
-        }
-        if isRunning {
-            _ = addItem(menu, remoteOn ? "Add Phone Access in All Recent Folders" : "Phone Access in All Recent Folders", #selector(phoneAccessAll), enabled: !busy)
-        }
-        if !isRunning {
-            _ = addItem(menu, "Turn On", #selector(turnOnPlain), enabled: !busy)
-
-            let phoneItem = NSMenuItem(title: "Turn On + Phone Access in", action: nil, keyEquivalent: "")
-            phoneItem.isEnabled = !busy
-            let sub = NSMenu()
-            sub.autoenablesItems = false
-            if recentDirs.isEmpty {
-                _ = addItem(sub, "No recent folders", nil, enabled: false)
-            } else {
-                let all = addItem(sub, "All Recent Folders", #selector(turnOnWithDir(_:)), enabled: !busy, object: "all")
-                all.toolTip = "One phone server per folder below (except your home folder), so the phone can open chats in any of them"
-                sub.addItem(.separator())
-            }
-            for dir in recentDirs {
-                let item = addItem(sub, tildePath(dir), #selector(turnOnWithDir(_:)), enabled: !busy, object: dir)
-                item.toolTip = dir
-            }
-            sub.addItem(.separator())
-            _ = addItem(sub, "Choose Folder…", #selector(chooseFolder), enabled: !busy)
-            phoneItem.submenu = sub
-            menu.addItem(phoneItem)
-        }
-
-        menu.addItem(.separator())
-
-        let settings = NSMenuItem(title: "Settings", action: nil, keyEquivalent: "")
-        let sm = NSMenu()
-        sm.autoenablesItems = false
-        _ = addItem(sm, "Low Power Mode While On", #selector(toggleLowPower), checked: lowPower)
-        _ = addItem(sm, "Phone Sessions in Separate Worktrees", #selector(toggleWorktree), checked: worktree)
-        _ = addItem(sm, "Lock Screen When Lid Closes", #selector(toggleLockOnLidClose), checked: lockOnLidClose)
-        let stopItem = NSMenuItem(title: "Stop After", action: nil, keyEquivalent: "")
-        let stopMenu = NSMenu()
-        stopMenu.autoenablesItems = false
-        for h in [0, 1, 2, 4, 8, 12] {
-            _ = addItem(stopMenu, h == 0 ? "No Limit" : "\(h) hour\(h == 1 ? "" : "s")", #selector(setHours(_:)), object: h, checked: hours == h)
-        }
-        stopItem.submenu = stopMenu
-        sm.addItem(stopItem)
-        sm.addItem(.separator())
-        _ = addItem(sm, "Open at Login", #selector(toggleOpenAtLogin), checked: openAtLogin)
-        settings.submenu = sm
-        menu.addItem(settings)
-
-        _ = addItem(menu, "Lock Screen Now", #selector(lockNow))
-        _ = addItem(menu, "Open Log", #selector(openLog))
-        menu.addItem(.separator())
-        _ = addItem(menu, "Quit Insomnia Menu", #selector(quit))
-    }
-
     func setBusy(_ value: Bool) {
         busy = value
         updateIcon()
     }
 
     func showError(_ text: String) {
+        closePopover()
         NSApp.activate(ignoringOtherApps: true)
         let alert = NSAlert()
         alert.messageText = "Insomnia"
         alert.informativeText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         alert.alertStyle = .warning
         alert.runModal()
+    }
+
+    /// Runs a script command off the main thread, then refreshes the state.
+    func perform(_ args: [String], showFailure: Bool = true) {
+        setBusy(true)
+        DispatchQueue.global().async {
+            let r = self.runScript(args)
+            let st = self.fetchState()
+            DispatchQueue.main.async {
+                self.state = st
+                self.setBusy(false)
+                if showFailure && r.status != 0 { self.showError(r.output) }
+            }
+        }
     }
 
     func turnOn(dir: String?) {
@@ -390,27 +329,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    @objc func turnOnPlain() { turnOn(dir: nil) }
-
-    @objc func turnOnWithDir(_ sender: NSMenuItem) {
-        if let dir = sender.representedObject as? String { turnOn(dir: dir) }
+    /// Phone access in DIR (or "all"): on its own while Insomnia runs, with Insomnia otherwise.
+    func phoneAccess(in dir: String) {
+        if !isRunning { turnOn(dir: dir); return }
+        var args = ["remote-on", dir]
+        if worktree { args += ["--remote-spawn", "worktree"] }
+        perform(args)
     }
 
-    @objc func chooseFolder() {
+    func chooseFolder() {
+        closePopover()
         NSApp.activate(ignoringOtherApps: true)
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
-        panel.prompt = "Turn On Here"
+        panel.prompt = "Use This Folder"
         panel.message = "Folder where phone-created Claude sessions will run"
         if let first = recentDirs.first { panel.directoryURL = URL(fileURLWithPath: first) }
         if panel.runModal() == .OK, let url = panel.url {
-            turnOn(dir: url.path)
+            phoneAccess(in: url.path)
         }
     }
 
-    @objc func turnOff() {
+    func turnOff() {
         let needsAdmin = isRunning || sleepDisabled
         let quiet = noPassword
         setBusy(true)
@@ -425,73 +367,333 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    @objc func phoneAccessAll() {
+    var started: Date? {
+        guard let s = state["started"], let t = TimeInterval(s), t > 0 else { return nil }
+        return Date(timeIntervalSince1970: t)
+    }
+
+    /// Saves the choice for the next start and applies it to a running session.
+    /// A session from before set-hours can't take a new limit, so it is restarted
+    /// with it (phone access keeps running across the restart).
+    func setHours(_ h: Int) {
+        hours = h
+        guard isRunning else { return }
+        if limitFixed {
+            restart()
+        } else {
+            perform(["set-hours", String(h)])
+        }
+    }
+
+    func restart() {
+        let quiet = noPassword
         setBusy(true)
-        let worktree = self.worktree
         DispatchQueue.global().async {
-            var args = ["remote-on", "all"]
-            if worktree { args += ["--remote-spawn", "worktree"] }
-            let r = self.runScript(args)
-            let st = self.fetchState()
+            let r = quiet ? self.runScript(["off"]) : self.runScriptAsAdmin(["off"])
             DispatchQueue.main.async {
-                self.state = st
                 self.setBusy(false)
-                if r.status != 0 { self.showError(r.output) }
+                if r.status != 0 {
+                    if !r.output.contains("-128") { self.showError(r.output) }
+                    self.refresh()
+                } else {
+                    self.turnOn(dir: nil)
+                }
             }
         }
     }
 
-    @objc func stopPhoneAccess() {
-        setBusy(true)
-        DispatchQueue.global().async {
-            self.runScript(["remote-off"])
-            let st = self.fetchState()
-            DispatchQueue.main.async {
-                self.state = st
-                self.setBusy(false)
-            }
+    func extendByOneHour() {
+        guard let end = deadline else { return }
+        let hoursLeft = max(0, end.timeIntervalSinceNow) / 3600 + 1
+        if limitFixed {
+            restart()
+        } else {
+            perform(["set-hours", String(format: "%.3f", hoursLeft)])
         }
     }
 
-    @objc func copyLink() {
+    func copyLink() {
         guard let url = state["remote_url"], !url.isEmpty else { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(url, forType: .string)
     }
 
-    @objc func toggleLowPower() { lowPower.toggle() }
-    @objc func toggleWorktree() { worktree.toggle() }
-    @objc func toggleLockOnLidClose() { lockOnLidClose.toggle() }
-    @objc func lockNow() { lockScreenNow() }
-
-    @objc func setHours(_ sender: NSMenuItem) {
-        if let h = sender.representedObject as? Int { hours = h }
-    }
-
-    @objc func toggleOpenAtLogin() {
+    func setOpenAtLogin(_ on: Bool) {
         do {
-            if openAtLogin {
-                try SMAppService.mainApp.unregister()
-            } else {
-                try SMAppService.mainApp.register()
-            }
+            if on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
         } catch {
             showError("Could not change Open at Login: \(error.localizedDescription)")
         }
         if SMAppService.mainApp.status == .requiresApproval {
             SMAppService.openSystemSettingsLoginItems()
         }
+        objectWillChange.send()
     }
 
-    @objc func openLog() {
+    func openLog() {
+        closePopover()
         let log = "/tmp/insomnia-watchdog.log"
         if !FileManager.default.fileExists(atPath: log) {
             FileManager.default.createFile(atPath: log, contents: nil)
         }
         NSWorkspace.shared.open(URL(fileURLWithPath: log))
     }
+}
 
-    @objc func quit() { NSApp.terminate(nil) }
+// MARK: - Panel
+
+let nightAccent = Color(red: 0.42, green: 0.40, blue: 0.95)
+
+struct PanelView: View {
+    @ObservedObject var app: AppDelegate
+    @AppStorage("showSettings") var showSettings = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            hero
+            if let warning {
+                Label(warning, systemImage: "exclamationmark.triangle.fill")
+                    .font(.callout).foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            durationRow
+            phoneRow
+            safetyRow
+            Divider()
+            settings
+            Divider()
+            footer
+        }
+        .padding(16)
+        .frame(width: 340)
+        .animation(.easeOut(duration: 0.2), value: showSettings)
+    }
+
+    // The one thing worth looking at: on or off, and how long it has left.
+    var hero: some View {
+        HStack(spacing: 14) {
+            TimeRing(progress: ringProgress, on: app.isRunning, busy: app.busy)
+                .frame(width: 58, height: 58)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(heroTitle)
+                    .font(.system(size: 22, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                    .lineLimit(1).minimumScaleFactor(0.8)
+                Text(heroSubtitle)
+                    .font(.callout).foregroundStyle(.secondary)
+                    .lineLimit(2, reservesSpace: true)
+            }
+            Spacer(minLength: 0)
+            // Always in place (only disabled while busy), so nothing jumps.
+            Toggle("", isOn: Binding(get: { app.isRunning },
+                                     set: { $0 ? app.turnOn(dir: nil) : app.turnOff() }))
+                .toggleStyle(.switch).labelsHidden()
+                .disabled(app.busy)
+                .help(app.isRunning ? "Turn off and let the Mac sleep normally" : "Keep the Mac awake with the lid closed")
+        }
+    }
+
+    var ringProgress: Double {
+        guard app.isRunning, let end = app.deadline, let start = app.started, end > start else {
+            return app.isRunning ? 1 : 0
+        }
+        return max(0, min(1, end.timeIntervalSince(app.now) / end.timeIntervalSince(start)))
+    }
+
+    var heroTitle: String {
+        if app.busy { return "One moment…" }
+        guard app.isRunning else { return "Sleeping normally" }
+        if let end = app.deadline { return "\(remaining(until: end)) left" }
+        return "Awake"
+    }
+
+    var heroSubtitle: String {
+        if app.busy { return "Changing sleep settings" }
+        if app.isRunning {
+            if let end = app.deadline {
+                return "Sleeps at \(end.formatted(date: .omitted, time: .shortened)). Safe to close the lid."
+            }
+            return "No time limit. Safe to close the lid."
+        }
+        if let last = app.state["last_stop"], !last.isEmpty {
+            let parts = last.split(separator: "|", maxSplits: 1).map(String.init)
+            if parts.count == 2 { return "Stopped at \(parts[0]): \(parts[1])." }
+        }
+        return "Turn on to keep working with the lid closed."
+    }
+
+    var warning: String? {
+        if !app.isRunning && app.sleepDisabled {
+            return "Sleep is still disabled with nothing watching it. Turn Insomnia off to fix it."
+        }
+        return nil
+    }
+
+    func remaining(until end: Date) -> String {
+        let minutes = max(0, Int(end.timeIntervalSince(app.now) / 60))
+        if minutes >= 60 { return minutes % 60 == 0 ? "\(minutes / 60) h" : "\(minutes / 60) h \(minutes % 60) min" }
+        return "\(minutes) min"
+    }
+
+    // Duration comes before the decision to leave, so it sits right under the switch.
+    var durationRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(app.isRunning ? "Stay awake for" : "When on, stay awake for").font(.callout.weight(.medium))
+                Spacer()
+                let canExtend = app.isRunning && app.deadline != nil && !app.busy
+                Button("+1 h") { app.extendByOneHour() }
+                    .controlSize(.small)
+                    .help("Push the stop time one hour later")
+                    .disabled(!canExtend)
+                    .opacity(canExtend ? 1 : 0)
+            }
+            Picker("Stay awake for", selection: Binding(get: { app.hours }, set: { app.setHours($0) })) {
+                ForEach(stopChoices, id: \.self) { h in Text(h == 0 ? "No limit" : "\(h) h").tag(h) }
+            }
+            .pickerStyle(.segmented).labelsHidden()
+            Text(durationNote).font(.caption).foregroundStyle(.secondary)
+                .lineLimit(2, reservesSpace: true)
+        }
+    }
+
+    var durationNote: String {
+        if app.limitFixed { return "Started before limits could change, so picking one restarts it. Phone access stays on." }
+        if app.isRunning { return "Counts from now. Phone access stops with it." }
+        return "Then it sleeps again and phone access stops."
+    }
+
+    var phoneRow: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Image(systemName: app.remoteOn ? "iphone.radiowaves.left.and.right" : "iphone")
+                .foregroundStyle(app.remoteOn ? nightAccent : .secondary)
+                .frame(width: 18)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(app.remoteOn ? phoneSummary : "Phone access off").font(.callout.weight(.medium))
+                Text(app.remoteOn ? "Open these chats from the Claude app on your phone."
+                                  : "Lets your phone open and start Claude chats on this Mac.")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .lineLimit(2, reservesSpace: true)
+            }
+            Spacer(minLength: 0)
+            Menu {
+                if app.remoteOn {
+                    Button("Copy Phone Link") { app.copyLink() }
+                    Divider()
+                    Section("In") {
+                        ForEach(app.remoteDirs, id: \.self) { Text(tildePath($0)) }
+                    }
+                    Divider()
+                }
+                Section(app.remoteOn ? "Add" : (app.isRunning ? "Turn on in" : "Turn on Insomnia with phone access in")) {
+                    if !app.recentDirs.isEmpty {
+                        Button("All Recent Folders") { app.phoneAccess(in: "all") }
+                        ForEach(app.recentDirs, id: \.self) { dir in
+                            Button(tildePath(dir)) { app.phoneAccess(in: dir) }
+                        }
+                    }
+                    Button("Choose Folder…") { app.chooseFolder() }
+                }
+                if app.remoteOn {
+                    Divider()
+                    Button("Stop Phone Access") { app.perform(["remote-off"], showFailure: false) }
+                }
+            } label: {
+                Text(app.remoteOn ? "Manage" : "Turn On")
+            }
+            .menuStyle(.borderedButton)
+            .frame(width: 84)
+        }
+    }
+
+    var phoneSummary: String {
+        let dirs = app.remoteDirs
+        if dirs.count == 1 { return "Phone access in \(URL(fileURLWithPath: dirs[0]).lastPathComponent)" }
+        return "Phone access in \(dirs.count) folders"
+    }
+
+    // What will stop it on its own, so closing the lid doesn't feel like a gamble.
+    var safetyRow: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Image(systemName: "shield.lefthalf.filled").foregroundStyle(.secondary).frame(width: 18)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Battery \(app.state["battery"] ?? "?")%, \(app.state["temp"] ?? "?") °C, on \(app.state["power"] == "AC" ? "charger" : "battery")")
+                    .font(.callout.weight(.medium))
+                Text("Sleeps by itself below \(app.state["min_battery"] ?? "20")% on battery, above \(app.state["max_temp"] ?? "45") °C, or when it runs hot.")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .lineLimit(2, reservesSpace: true)
+            }
+        }
+    }
+
+    var settings: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button {
+                showSettings.toggle()
+            } label: {
+                HStack {
+                    Text("Settings").font(.callout.weight(.medium))
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .rotationEffect(.degrees(showSettings ? 90 : 0))
+                        .foregroundStyle(.secondary)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            if showSettings {
+                VStack(spacing: 7) {
+                    switchRow(app.isRunning ? "Low Power Mode (from next start)" : "Low Power Mode while on",
+                              Binding(get: { app.lowPower }, set: { app.lowPower = $0 }))
+                    switchRow("Phone chats in separate worktrees", Binding(get: { app.worktree }, set: { app.worktree = $0 }))
+                    switchRow("Lock screen when the lid closes", Binding(get: { app.lockOnLidClose }, set: { app.lockOnLidClose = $0 }))
+                    switchRow("Open at login", Binding(get: { app.openAtLogin }, set: { app.setOpenAtLogin($0) }))
+                }
+                .transition(.opacity)
+            }
+        }
+    }
+
+    func switchRow(_ title: String, _ isOn: Binding<Bool>) -> some View {
+        HStack {
+            Text(title).font(.callout)
+            Spacer()
+            Toggle("", isOn: isOn).toggleStyle(.switch).controlSize(.mini).labelsHidden()
+        }
+    }
+
+    var footer: some View {
+        HStack {
+            Button("Lock Screen") { app.closePopover(); lockScreenNow() }
+            Button("Open Log") { app.openLog() }
+            Spacer()
+            Button("Quit") { NSApp.terminate(nil) }
+        }
+        .controlSize(.small)
+    }
+}
+
+/// Insomnia's eye inside a ring that drains as the time limit runs out.
+struct TimeRing: View {
+    var progress: Double
+    var on: Bool
+    var busy: Bool
+
+    var body: some View {
+        ZStack {
+            Circle().stroke(Color.secondary.opacity(0.18), lineWidth: 5)
+            Circle()
+                .trim(from: 0, to: on ? progress : 0)
+                .stroke(nightAccent, style: StrokeStyle(lineWidth: 5, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+                .animation(.easeInOut(duration: 0.6), value: progress)
+            Image(nsImage: menuIcon(on ? .awake : (busy ? .waking : .asleep)))
+                .renderingMode(.template)
+                .resizable().scaledToFit()
+                .frame(width: 26, height: 26)
+                .foregroundStyle(on ? nightAccent : .secondary)
+        }
+    }
 }
 
 let app = NSApplication.shared

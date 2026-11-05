@@ -18,11 +18,11 @@ It is built for leaving long jobs running (AI coding agents, builds, downloads, 
   - thermal pressure reaches Heavy or worse,
   - the battery passes 45 °C (`--max-temp`),
   - the charge drops under 20% on battery power (`--min-battery`),
-  - the optional `--hours` limit runs out.
+  - the optional `--hours` limit runs out. That also stops phone access, so a timed session ends fully. `insomnia set-hours N` changes the limit of a running session (counted from now, 0 = no limit).
 - **Always restores sleep.** Stopping it in any normal way (`insomnia off`, Ctrl+C, a tripped limit) switches normal sleep back on. Even a crash, a `kill -9` of the watchdog or a reboot mid-session can't leave sleep disabled: a small login agent (`insomnia heal-agent`, set up by the installer) runs `insomnia heal` at login and every minute, and if sleep is disabled with no watchdog alive it switches sleep back on (and sleeps the Mac if the lid is closed). Restoring on its own needs the no-password rule below; without it the agent notifies you instead.
 - **Locks the screen when the lid closes** (menu bar app). A locked Mac keeps running everything; only sleep stops work.
 - **Phone access** (optional). `--remote DIR` starts `claude remote-control` in DIR, so the Claude mobile app (Code tab) or claude.ai/code can open and create sessions that run on this Mac. `--remote all` does this in every recent Claude folder at once (up to 8, `INSOMNIA_REMOTE_MAX`; the home folder is skipped because Remote Control never saves trust there), one server per folder named `<Mac> · <folder>`, so the phone can open and start chats in any of them. `--remote` can also be repeated, and `insomnia remote-on DIR...|all` adds folders to a running setup. A folder whose server can't start (for example an untrusted folder) is reported and skipped. In worktree mode, folders that aren't git repos fall back to same-dir. Chats started in the Claude desktop app show on the phone through its own "Connect new sessions to Remote Control" setting. Turning Insomnia off leaves phone access running, so phone chats stay connected while the Mac is awake. A battery guard stops phone access when the Mac is on battery below 20% (set `INSOMNIA_REMOTE_MIN_BATTERY` to change it), so it can never drain a forgotten laptop. If you use the Claude desktop app, also consider turning off its "Keep awake on battery power" setting.
-- **Menu bar app.** Turn on, turn on with phone access in one of your recent Claude folders, turn off, lock, battery and temperature, and settings (Low Power Mode, time limit, worktrees per phone session, Open at Login).
+- **Menu bar panel.** Click the icon for a small panel: an on/off switch with the time left on a ring, a "Stay awake for" picker that also changes a running session, +1 h, phone access in one or all of your recent Claude folders, battery and temperature with the limits that put the Mac to sleep, and settings (Low Power Mode, worktrees per phone session, lock on lid close, Open at Login).
 
 ## Requirements
 
@@ -75,11 +75,13 @@ insomnia on --remote all                      # phone access in all your recent 
 insomnia on --remote ~/code/my-project --remote-spawn worktree   # each phone session in its own git worktree
 insomnia off                                  # normal sleep back (phone access keeps running)
 insomnia off --all                            # also stop phone access
-insomnia status                               # human-readable state
+insomnia set-hours 2                          # running session: stop 2 hours from now (0 = no limit)
+insomnia status                               # human-readable state, including when it stops
+insomnia allow-schedules                      # let Claude turn on phone access for scheduled-task runs
 insomnia toggle
 ```
 
-Logs: `/tmp/insomnia-watchdog.log` and `/tmp/insomnia-remote.d/*.log` (one per phone folder).
+Logs: `/tmp/insomnia-watchdog.log` and `/tmp/insomnia-remote.d/*.log` (one per phone folder); a folder that failed to start keeps its log in `~/Library/Logs/Insomnia/`, and `insomnia status` lists them.
 
 ## Using it with Claude Code
 
@@ -96,7 +98,7 @@ Short version: on a fan-cooled MacBook Pro on a hard surface or stand, yes, low 
 
 ```
 scripts/insomnia.sh      the command: on/off, watchdog, Remote Control, state for the app
-menubar/main.swift       the menu bar app (AppKit, no dependencies)
+menubar/main.swift       the menu bar app (AppKit + SwiftUI panel, no dependencies)
 menubar/Icons.swift      menu bar and app icons
 menubar/tools/main.swift renders the .icns and previews
 menubar/build.sh         compiles and installs ~/Applications/Insomnia.app

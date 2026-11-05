@@ -7,6 +7,9 @@ set -u
 
 PIDFILE=/tmp/insomnia.pid
 LOG=/tmp/insomnia-watchdog.log
+# The running watchdog re-reads its stop time from here every check, so
+# "insomnia set-hours" can change the limit of a session that is already on.
+DEADLINE_FILE=/tmp/insomnia-deadline
 SUDOERS_FILE=/etc/sudoers.d/insomnia
 REMOTE_PIDFILE=/tmp/insomnia-remote.pid
 REMOTE_LOG=/tmp/insomnia-remote.log
@@ -16,6 +19,11 @@ REMOTE_GUARD_PIDFILE=/tmp/insomnia-remote-guard.pid
 LAST_DIR_FILE="$HOME/.config/insomnia/last-dir"
 HEAL_LABEL=com.oddproblems.insomnia.heal
 HEAL_NOTIFIED=/tmp/insomnia-heal.notified
+FAILED_LOG_DIR="$HOME/Library/Logs/Insomnia"
+CLAUDE_SETTINGS="$HOME/.claude/settings.json"
+CLAUDE_SESSIONS_DIR="$HOME/Library/Application Support/Claude/claude-code-sessions"
+SCHEDULE_RC_RULE=mcp__ccd_session_mgmt__set_remote_control
+SCHEDULE_IGNORE="${INSOMNIA_SCHEDULE_IGNORE-}"
 
 INTERVAL=30
 HOURS=0
@@ -33,6 +41,7 @@ CAFF_PID=""
 ORIG_PM_BATT=""
 ORIG_PM_AC=""
 SLEEP_AFTER=0
+STOP_PHONE=0
 STOP_REASON="stopped"
 
 usage() {
@@ -43,6 +52,8 @@ Usage:
   insomnia off [--all]    Restore normal sleep. Phone access (Remote Control) keeps
                           running so phone chats stay connected; --all stops it too.
   insomnia toggle         On if off, off if on.
+  insomnia set-hours N    Change the time limit of the running session: stop N hours
+                          from now (0 = no limit).
   insomnia status         Show sleep state, lid, power, battery temp, thermal pressure.
   insomnia state          Same as status, as key=value lines (for the menu bar app).
   insomnia recent-dirs [N]  Most recent folders Claude sessions ran in.
@@ -58,9 +69,13 @@ Usage:
                           running (after a crash, kill -9 or reboot mid-session).
   insomnia heal-agent install|uninstall|status
                           A login agent that runs "heal" at login and every minute.
+  insomnia allow-schedules  Allow Claude to turn Remote Control on for scheduled-task
+                          runs (adds one rule to ~/.claude/settings.json), so the
+                          phone can open them. "status" lists recent runs still off.
 
 Options for "on":
-  --hours N          Stop after N hours (decimals ok). Default: no limit.
+  --hours N          Stop after N hours (decimals ok), and stop phone access then too.
+                     Default: no limit. Change it later with "insomnia set-hours".
   --min-battery P    On battery power, stop and sleep below P%. Default: 20.
   --max-temp C       Stop and sleep if battery temperature exceeds C °C. Default: 45.
   --low-power        Switch to Low Power Mode while running (less heat), restore after.
@@ -199,6 +214,22 @@ resolve_remote_dirs() {
   done | awk 'NF && !seen[$0]++'
 }
 
+# A failed server's log outlives its cleanup, and a reboot (/tmp is wiped), so
+# there is something to read or report. One file per folder; a later
+# successful start there removes it.
+failed_log_path() { echo "$FAILED_LOG_DIR/$(basename "$2")-$1.log"; }
+
+keep_failed_log() {
+  local key="$1" dir="$2" reason="$3"
+  mkdir -p "$FAILED_LOG_DIR"
+  {
+    echo "$(date '+%F %T') phone access failed in $dir"
+    echo "reason: $reason"
+    echo
+    sed 's/\x1b\[[0-9;?]*[a-zA-Z]//g' "$REMOTE_STATE_DIR/$key.log" 2>/dev/null
+  } > "$(failed_log_path "$key" "$dir")"
+}
+
 start_remote() {
   local bin dirs dir key spawn computer started="" pending ok=0 failed=0 reason
   if on_battery && [ "$(batt_percent)" -lt "$REMOTE_MIN_BATTERY" ]; then
@@ -239,17 +270,21 @@ start_remote() {
     dir=$(cat "$REMOTE_STATE_DIR/$key.dir")
     if ps -p "$(cat "$REMOTE_STATE_DIR/$key.pid")" >/dev/null 2>&1 && grep -qE "Connected|Ready" "$REMOTE_STATE_DIR/$key.log"; then
       echo "Phone access on in $dir"; ok=$((ok + 1))
+      rm -f "$(failed_log_path "$key" "$dir")"
     else
-      reason=$(sed 's/\x1b\[[0-9;?]*[a-zA-Z]//g' "$REMOTE_STATE_DIR/$key.log" 2>/dev/null | grep -v '^[[:space:]]*$' | tail -1)
-      echo "Phone access failed in $dir: ${reason:-no connection within 30 s}" >&2
+      reason=$(sed 's/\x1b\[[0-9;?]*[a-zA-Z]//g' "$REMOTE_STATE_DIR/$key.log" 2>/dev/null | grep -v '^[[:space:]]*$' | awk '/^Error:/ {e=$0} {l=$0} END {print (e != "" ? e : l)}')
+      reason=${reason:-no connection within 30 s}
       kill_tree "$(cat "$REMOTE_STATE_DIR/$key.pid")"
+      keep_failed_log "$key" "$dir" "$reason"
+      echo "Phone access failed in $dir: $reason" >&2
+      echo "  Log: $(failed_log_path "$key" "$dir")" >&2
       rm -f "$REMOTE_STATE_DIR/$key".*
       failed=$((failed + 1))
     fi
   done
 
   if [ "$ok" = 0 ]; then
-    echo "Remote Control failed to start, see the logs in $REMOTE_STATE_DIR" >&2
+    echo "Remote Control failed to start, see the logs in $FAILED_LOG_DIR" >&2
     return 1
   fi
   if [ "$(printf '%s\n' "$dirs" | wc -l | tr -d ' ')" = 1 ]; then
@@ -304,8 +339,12 @@ cleanup() {
   priv /usr/bin/pmset -a disablesleep 0
   [ -n "$ORIG_PM_BATT" ] && priv /usr/bin/pmset -b powermode "$ORIG_PM_BATT"
   [ -n "$ORIG_PM_AC" ] && priv /usr/bin/pmset -c powermode "$ORIG_PM_AC"
-  rm -f "$PIDFILE"
+  rm -f "$PIDFILE" "$DEADLINE_FILE"
   log "normal sleep restored ($STOP_REASON)"
+  if [ "$STOP_PHONE" = 1 ] && remote_pid >/dev/null; then
+    stop_remote >/dev/null 2>&1
+    log "phone access stopped too"
+  fi
   if [ "$SLEEP_AFTER" = 1 ] && lid_closed; then
     log "lid is closed, sleeping now"
     priv /usr/bin/pmset sleepnow >/dev/null
@@ -415,6 +454,8 @@ run_watchdog() {
   if [ "$HOURS" != 0 ]; then
     deadline=$(awk -v s="$start" -v h="$HOURS" 'BEGIN{printf "%d", s + h*3600}')
   fi
+  echo "$deadline" > "$DEADLINE_FILE"
+  is_root && chmod 666 "$DEADLINE_FILE"
 
   log "insomnia ON (power=$(power_source), battery=$(batt_percent)%, temp=$(batt_temp)°C, thermal=$(thermal_pressure), limit=${HOURS}h, min-battery=${MIN_BATTERY}%, max-temp=${MAX_BATT_TEMP}°C, low-power=$LOW_POWER)"
   [ -t 1 ] && echo "You can close the lid now. Ctrl+C here, or 'insomnia off' from any terminal, restores normal sleep."
@@ -425,8 +466,10 @@ run_watchdog() {
       STOP_REASON="$reason"; SLEEP_AFTER=1; exit 0
     fi
     now=$(date +%s)
+    deadline=$(cat "$DEADLINE_FILE" 2>/dev/null)
+    case "$deadline" in ''|*[!0-9]*) deadline=0 ;; esac
     if [ "$deadline" -gt 0 ] && [ "$now" -ge "$deadline" ]; then
-      STOP_REASON="time limit of ${HOURS}h reached"; SLEEP_AFTER=1; exit 0
+      STOP_REASON="time limit reached"; SLEEP_AFTER=1; STOP_PHONE=1; exit 0
     fi
     if [ "$(sleep_disabled)" != 1 ]; then
       priv /usr/bin/pmset -a disablesleep 1
@@ -438,6 +481,50 @@ run_watchdog() {
     fi
     sleep "$INTERVAL" & wait $!
   done
+}
+
+# The running session's stop time (epoch seconds, 0 = no limit). A watchdog
+# from before set-hours has no deadline file, so work it out from its start
+# time and --hours argument instead.
+# When the running session started (epoch seconds).
+session_start() {
+  local pid
+  pid=$(running_pid) || return 0
+  date -j -f "%a %b %d %T %Y" "$(ps -o lstart= -p "$pid" 2>/dev/null | awk '{print $1, $2, $3, $4, $5}')" +%s 2>/dev/null
+}
+
+session_deadline() {
+  local pid line start h
+  if [ -f "$DEADLINE_FILE" ]; then cat "$DEADLINE_FILE"; return; fi
+  pid=$(running_pid) || return 0
+  line=$(ps -o lstart= -o args= -p "$pid" 2>/dev/null) || return 0
+  start=$(date -j -f "%a %b %d %T %Y" "$(echo "$line" | awk '{print $1, $2, $3, $4, $5}')" +%s 2>/dev/null) || return 0
+  h=$(echo "$line" | sed -n 's/.*--hours \([0-9.]*\).*/\1/p')
+  if [ -z "$h" ] || [ "$h" = 0 ]; then echo 0; return; fi
+  awk -v s="$start" -v h="$h" 'BEGIN{printf "%d", s + h*3600}'
+}
+
+cmd_set_hours() {
+  local h="${1:-}" deadline=0
+  case "$h" in ''|*[!0-9.]*) echo "Usage: insomnia set-hours N   (0 = no limit)" >&2; return 2 ;; esac
+  if ! running_pid >/dev/null; then
+    echo "Insomnia is off; give the limit when turning it on: insomnia on --hours $h" >&2
+    return 1
+  fi
+  if [ ! -f "$DEADLINE_FILE" ]; then
+    echo "This session was started by an older Insomnia, which can't change its limit. Turn Insomnia off and on again to use the new one." >&2
+    return 1
+  fi
+  if awk -v h="$h" 'BEGIN{exit !(h > 0)}'; then
+    deadline=$(awk -v s="$(date +%s)" -v h="$h" 'BEGIN{printf "%d", s + h*3600}')
+  fi
+  echo "$deadline" > "$DEADLINE_FILE" || return 1
+  if [ "$deadline" = 0 ]; then
+    log "time limit removed"; echo "No time limit now."
+  else
+    log "time limit set: stops at $(date -r "$deadline" '+%H:%M')"
+    echo "Stops at $(date -r "$deadline" '+%H:%M')."
+  fi
 }
 
 cmd_off() {
@@ -554,11 +641,57 @@ RULE
   rm -f "$tmp"
 }
 
+# Scheduled-task runs in the Claude app start with Remote Control off, so the
+# phone can't open them. Only the app can switch it on, through the tool this
+# rule allows (a scheduled task of your own calls it). Insomnia only reads the
+# app's session files to say which recent runs are still off.
+schedule_rc_rule() { grep -q "\"$SCHEDULE_RC_RULE\"" "$CLAUDE_SETTINGS" 2>/dev/null; }
+
+# Task ids of unarchived scheduled runs from the last 3 days that are still off,
+# one line per run.
+schedule_runs_off() {
+  local f t
+  [ -d "$CLAUDE_SESSIONS_DIR" ] || return 0
+  find "$CLAUDE_SESSIONS_DIR" -name 'local_*.json' -mtime -3 -print0 2>/dev/null |
+    xargs -0 grep -l '"scheduledTaskId":"' 2>/dev/null |
+    while IFS= read -r f; do
+      grep -q '"remoteControlUserEnabled":true' "$f" && continue
+      grep -q '"isArchived":true' "$f" && continue
+      t=$(grep -o '"scheduledTaskId":"[^"]*"' "$f" | head -1 | cut -d'"' -f4)
+      case " $SCHEDULE_IGNORE " in *" $t "*) continue ;; esac
+      echo "$t"
+    done
+}
+
+cmd_allow_schedules() {
+  if schedule_rc_rule; then echo "Already allowed in $CLAUDE_SETTINGS."; return 0; fi
+  [ -f "$CLAUDE_SETTINGS" ] || { echo "No $CLAUDE_SETTINGS found." >&2; return 1; }
+  cp "$CLAUDE_SETTINGS" "$CLAUDE_SETTINGS.bak-$(date +%Y%m%d-%H%M%S)"
+  python3 - "$CLAUDE_SETTINGS" "$SCHEDULE_RC_RULE" <<'PY' || return 1
+import json, os, sys
+path, rule = sys.argv[1], sys.argv[2]
+d = json.load(open(path))
+d.setdefault("permissions", {}).setdefault("allow", []).append(rule)
+with open(path + ".tmp", "w") as f:
+    json.dump(d, f, indent=2, ensure_ascii=False)
+    f.write("\n")
+json.load(open(path + ".tmp"))
+os.replace(path + ".tmp", path)
+PY
+  echo "Allowed $SCHEDULE_RC_RULE in $CLAUDE_SETTINGS (backup kept next to it)."
+  echo "Something still has to call it for each run, such as a scheduled task of your own."
+}
+
 cmd_status() {
-  local pid sd
+  local pid sd f off
   sd=$(sleep_disabled)
   if pid=$(running_pid); then
     echo "Session:          running (pid $pid)"
+    f=$(session_deadline)
+    case "$f" in 0) echo "Stops:            no time limit" ;;
+      ''|*[!0-9]*) echo "Stops:            not known" ;;
+      *) if [ -f "$DEADLINE_FILE" ]; then echo "Stops:            at $(date -r "$f" '+%H:%M') (and phone access with it)"
+         else echo "Stops:            at $(date -r "$f" '+%H:%M') (older session: limit fixed, phone access stays on)"; fi ;; esac
   else
     echo "Session:          not running"
   fi
@@ -578,13 +711,34 @@ cmd_status() {
   else
     echo "Remote Control:   not running"
   fi
+  for f in "$FAILED_LOG_DIR"/*.log; do
+    [ -f "$f" ] && echo "Failed phone log: $f"
+  done
+  if schedule_rc_rule; then
+    echo "Scheduled runs:   phone switch allowed"
+  else
+    echo "Scheduled runs:   phone switch not allowed (insomnia allow-schedules)"
+  fi
+  off=$(schedule_runs_off | sort | uniq -c | sort -rn)
+  if [ -n "$off" ]; then
+    echo "                  $(echo "$off" | awk '{n += $1} END {print n}') recent run(s) the phone can't open:" \
+      "$(echo "$off" | awk '{printf "%s%s (%s)", s, $2, $1; s = ", "}')"
+  fi
   echo "Log:              $LOG"
 }
 
 cmd_state() {
   local pid sd
   sd=$(sleep_disabled)
-  if running_pid >/dev/null; then echo "running=1"; else echo "running=0"; fi
+  if running_pid >/dev/null; then
+    echo "running=1"
+    echo "deadline=$(session_deadline)"
+    [ -f "$DEADLINE_FILE" ] || echo "deadline_fixed=1"
+    echo "started=$(session_start)"
+  else
+    echo "running=0"
+    echo "last_stop=$(tail -n 30 "$LOG" 2>/dev/null | sed -n 's/^[0-9-]* \([0-9][0-9]:[0-9][0-9]\):[0-9][0-9] normal sleep restored (\(.*\))$/\1|\2/p' | tail -1)"
+  fi
   echo "sleep_disabled=${sd:-0}"
   if remote_pid >/dev/null; then
     echo "remote=1"
@@ -600,6 +754,8 @@ cmd_state() {
   echo "battery=$(batt_percent)"
   echo "temp=$(batt_temp)"
   if has_rule; then echo "nopasswd=1"; else echo "nopasswd=0"; fi
+  echo "min_battery=$MIN_BATTERY"
+  echo "max_temp=$MAX_BATT_TEMP"
 }
 
 cmd_recent_dirs() {
@@ -625,6 +781,7 @@ case "${1:-}" in
     shift
     if running_pid >/dev/null; then cmd_off; else cmd_on "$@"; fi ;;
   status) cmd_status ;;
+  set-hours) cmd_set_hours "${2:-}" ;;
   state) cmd_state ;;
   recent-dirs) cmd_recent_dirs "${2:-8}" ;;
   remote-on)
@@ -641,6 +798,7 @@ case "${1:-}" in
   nopasswd-status) has_rule ;;
   heal) cmd_heal ;;
   heal-agent) cmd_heal_agent "${2:-status}" ;;
+  allow-schedules) cmd_allow_schedules ;;
   -h|--help|help|"") usage ;;
   *) echo "Unknown command: $1" >&2; usage; exit 2 ;;
-esac
+esac; exit
