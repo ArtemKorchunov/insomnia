@@ -2,6 +2,7 @@ import Cocoa
 import ServiceManagement
 import IOKit
 import SwiftUI
+import UserNotifications
 
 let scriptPath = NSHomeDirectory() + "/.local/bin/insomnia"
 let legacyLaunchAgentPath = NSHomeDirectory() + "/Library/LaunchAgents/io.github.artemkorchunov.insomnia.plist"
@@ -37,10 +38,13 @@ func shellQuote(_ s: String) -> String {
     "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
 }
 
-final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
+final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject, UNUserNotificationCenterDelegate {
     var statusItem: NSStatusItem!
     let popover = NSPopover()
-    @Published var state: [String: String] = [:]
+    @Published var state: [String: String] = [:] { didSet { stateChanged(from: oldValue) } }
+    /// Set while the user turns Insomnia off, so only stops it made on its own get a notification.
+    var userStopping = false
+    var warnedDeadline: TimeInterval = 0
     @Published var recentDirs: [String] = []
     @Published var busy = false
     @Published var now = Date()
@@ -125,6 +129,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
                 self.updateIcon()
             }
         }
+        let center = UNUserNotificationCenter.current()
+        center.delegate = self
+        center.setNotificationCategories([UNNotificationCategory(
+            identifier: "insomnia.ending",
+            actions: [UNNotificationAction(identifier: "extend", title: "+1 hour")],
+            intentIdentifiers: [])])
+        center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
         Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { _ in self.refresh() }
         activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiatedAllowingIdleSystemSleep], reason: "Watch the lid to lock the screen")
         Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { _ in self.checkLid() }
@@ -225,6 +236,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             }
         }
         lidWasClosed = closed
+    }
+
+    // A stop you didn't ask for (time limit, battery, heat) and a time limit about
+    // to run out both get a notification, so neither surprises you on the phone.
+    func stateChanged(from old: [String: String]) {
+        guard !busy, !userStopping else { return }
+        if old["running"] == "1" && state["running"] == "0" {
+            var body = "The Mac sleeps normally again."
+            let parts = (state["last_stop"] ?? "").split(separator: "|", maxSplits: 1).map(String.init)
+            if parts.count == 2 { body = "Stopped at \(parts[0]): \(parts[1]). " + body }
+            // "insomnia off" from a terminal is still you turning it off.
+            if !(parts.last ?? "").contains("insomnia off") {
+                notify(title: "Insomnia turned off", body: body)
+            }
+        }
+        if isRunning, let end = deadline {
+            let left = end.timeIntervalSinceNow
+            if left > 0, left <= 600, warnedDeadline != end.timeIntervalSince1970 {
+                warnedDeadline = end.timeIntervalSince1970
+                notify(title: "Insomnia stops at \(end.formatted(date: .omitted, time: .shortened))",
+                       body: "About \(max(1, Int(left / 60))) min left. Phone access stops with it.",
+                       category: "insomnia.ending")
+            }
+        }
+    }
+
+    func notify(title: String, body: String, category: String? = nil) {
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.sound = .default
+        if let category { content.categoryIdentifier = category }
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
+    }
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
+                                withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        completionHandler([.banner, .sound])
+    }
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
+                                withCompletionHandler completionHandler: @escaping () -> Void) {
+        if response.actionIdentifier == "extend" {
+            DispatchQueue.main.async { self.extendByOneHour() }
+        }
+        completionHandler()
     }
 
     func refresh() {
