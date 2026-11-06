@@ -1,0 +1,686 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Insomnia for Mac</title>
+<meta name="description" content="Keep your MacBook working with the lid closed, reach Claude Code from your phone, and let a watchdog put it to sleep when it gets hot, low or late.">
+<link rel="icon" href="img/app-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --night-0:#070821;
+  --night-1:#11143d;
+  --dusk:#3a2a7a;
+  --violet:#6b66f2;      /* the app's nightAccent */
+  --violet-soft:#a9a6ff;
+  --spark:#e8876a;       /* the iris: the Claude spark */
+  --moon:#f4ecd6;
+  --ink:#f3f3fb;
+  --ink-2:rgba(236,236,250,.72);
+  --ink-3:rgba(236,236,250,.5);
+  --line:rgba(255,255,255,.14);
+  --ok:#5fd39a;
+  --sys:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Helvetica,Arial,sans-serif;
+  --display:"Bricolage Grotesque",var(--sys);
+  --mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*::before,*::after{animation:none!important;transition:none!important}}
+body{margin:0;background:var(--night-0);color:var(--ink);font:16px/1.55 var(--sys);-webkit-font-smoothing:antialiased;overflow-x:hidden}
+a{color:inherit}
+:focus-visible{outline:2px solid var(--violet-soft);outline-offset:3px;border-radius:6px}
+.wrap{max-width:1120px;margin:0 auto;padding:0 24px}
+@media (max-width:600px){.wrap{padding:0 16px}}
+
+/* ---------- the night sky behind everything ---------- */
+.sky{position:fixed;inset:0;z-index:-1;pointer-events:none;
+  background:
+    radial-gradient(1200px 700px at 78% -10%, rgba(107,102,242,.35), transparent 60%),
+    radial-gradient(900px 600px at 10% 20%, rgba(58,42,122,.55), transparent 65%),
+    linear-gradient(180deg,var(--night-1) 0%,var(--night-0) 55%,#05061a 100%)}
+.sky canvas{position:absolute;inset:0;width:100%;height:100%}
+
+/* ---------- liquid glass ---------- */
+.glass{position:relative;isolation:isolate;
+  background:linear-gradient(160deg,rgba(255,255,255,.16),rgba(255,255,255,.05) 40%,rgba(255,255,255,.08));
+  -webkit-backdrop-filter:blur(26px) saturate(170%);backdrop-filter:blur(26px) saturate(170%);
+  border-radius:22px;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.45),
+    inset 0 -1px 0 rgba(255,255,255,.08),
+    inset 0 0 0 1px rgba(255,255,255,.10),
+    0 1px 2px rgba(0,0,0,.25),
+    0 30px 80px -20px rgba(3,4,25,.75)}
+/* specular rim: brighter on the top-left, like light catching a lens */
+.glass::before{content:"";position:absolute;inset:0;border-radius:inherit;padding:1px;pointer-events:none;
+  background:linear-gradient(135deg,rgba(255,255,255,.7),rgba(255,255,255,.08) 30%,rgba(255,255,255,0) 55%,rgba(169,166,255,.35));
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude}
+/* soft sheen that follows the pointer (set by JS) */
+.glass::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;z-index:-1;
+  background:radial-gradient(420px 260px at var(--mx,30%) var(--my,0%),rgba(255,255,255,.14),transparent 60%)}
+.refract{-webkit-backdrop-filter:blur(26px) saturate(170%);backdrop-filter:url(#lens) blur(22px) saturate(170%)}
+
+/* ---------- nav ---------- */
+nav{position:sticky;top:12px;z-index:20;margin:12px auto 0;max-width:1120px;padding:0 24px}
+nav .bar{display:flex;align-items:center;gap:20px;padding:8px 10px 8px 14px;border-radius:999px}
+nav .brand{display:flex;align-items:center;gap:10px;font:700 17px/1 var(--display);text-decoration:none;letter-spacing:-.01em}
+nav .brand img{width:28px;height:28px}
+nav .links{display:flex;gap:4px;margin-left:auto}
+nav .links a{text-decoration:none;color:var(--ink-2);font-size:14px;padding:8px 12px;border-radius:999px}
+nav .links a:hover{color:var(--ink);background:rgba(255,255,255,.08)}
+@media (max-width:720px){nav .links a:not(.gh){display:none}nav{padding:0 16px}}
+
+/* ---------- buttons ---------- */
+.btn{display:inline-flex;align-items:center;gap:10px;border:0;cursor:pointer;font:600 15px/1 var(--sys);text-decoration:none;
+  padding:14px 20px;border-radius:999px;color:#fff;transition:transform .15s ease,box-shadow .2s ease}
+.btn:active{transform:scale(.98)}
+.btn-primary{background:linear-gradient(180deg,#8a86ff,#5f59ea);box-shadow:inset 0 1px 0 rgba(255,255,255,.5),0 10px 30px -8px rgba(107,102,242,.8)}
+.btn-primary:hover{box-shadow:inset 0 1px 0 rgba(255,255,255,.5),0 14px 40px -8px rgba(107,102,242,1)}
+.btn-glass{background:rgba(255,255,255,.08);box-shadow:inset 0 0 0 1px rgba(255,255,255,.18),inset 0 1px 0 rgba(255,255,255,.3)}
+.btn-glass:hover{background:rgba(255,255,255,.13)}
+.btn svg{width:18px;height:18px}
+
+/* ---------- hero ---------- */
+.hero{text-align:center;padding:84px 0 28px}
+.hero h1{font:800 clamp(44px,7.6vw,92px)/.95 var(--display);letter-spacing:-.035em;margin:0 auto;max-width:12ch;
+  background:linear-gradient(180deg,#fff 30%,#c9c7ff);-webkit-background-clip:text;background-clip:text;color:transparent}
+.hero p.lede{font-size:clamp(17px,2vw,20px);color:var(--ink-2);max-width:40ch;margin:22px auto 0}
+.hero .ctas{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:32px}
+.hero .fine{margin-top:16px;color:var(--ink-3);font-size:13px}
+
+/* ---------- desktop stage ---------- */
+.stage{position:relative;margin:48px auto 0;max-width:1040px;border-radius:28px;overflow:hidden;overflow:clip;height:660px;
+  background:
+    radial-gradient(260px 260px at 82% 22%, rgba(244,236,214,.55), rgba(244,236,214,.12) 40%, transparent 70%),
+    radial-gradient(700px 420px at 20% 110%, rgba(232,135,106,.35), transparent 70%),
+    linear-gradient(170deg,#2b2370 0%,#1a1a52 45%,#0d0f33 100%);
+  box-shadow:0 0 0 1px rgba(255,255,255,.12),0 60px 120px -30px rgba(0,0,0,.8)}
+.stage .moon{position:absolute;right:15%;top:15%;width:70px;height:70px;border-radius:50%;
+  background:radial-gradient(circle at 35% 35%,#fffaf0,#efe3c2 60%,#d8c99f);box-shadow:0 0 60px 20px rgba(244,236,214,.35)}
+.stage .hills{position:absolute;left:0;right:0;bottom:0;height:38%;
+  background:radial-gradient(120% 100% at 30% 100%,#0a0b26 55%,transparent 56%),radial-gradient(90% 80% at 85% 100%,#14143c 55%,transparent 56%)}
+.menubar{position:absolute;top:0;left:0;right:0;height:30px;display:flex;align-items:center;gap:18px;padding:0 14px;font-size:13px;
+  background:rgba(20,20,50,.35);-webkit-backdrop-filter:blur(20px) saturate(160%);backdrop-filter:blur(20px) saturate(160%);
+  box-shadow:inset 0 -1px 0 rgba(255,255,255,.08);z-index:3}
+.menubar .apple{width:14px;height:14px;opacity:.95}
+.menubar b{font-weight:700}
+.menubar span{color:rgba(255,255,255,.9)}
+.menubar .right{margin-left:auto;display:flex;align-items:center;gap:14px}
+.mb-eye{display:flex;align-items:center;gap:6px;height:22px;padding:0 6px;border-radius:5px;border:0;background:transparent;color:#fff;cursor:pointer;font:500 13px var(--sys)}
+.mb-eye.open{background:rgba(255,255,255,.2)}
+.mb-eye i{display:block;width:18px;height:18px;background:#fff;-webkit-mask:var(--icon) center/contain no-repeat;mask:var(--icon) center/contain no-repeat}
+.stage .hint{position:absolute;left:24px;bottom:22px;z-index:2;color:var(--ink-2);font-size:13px;display:flex;align-items:center;gap:8px}
+.stage .hint kbd{font:500 11px var(--mono);padding:2px 6px;border-radius:5px;background:rgba(255,255,255,.12)}
+
+/* the real panel, rebuilt */
+.panel{position:absolute;top:40px;width:340px;padding:16px;border-radius:18px;z-index:4;font-size:13px;line-height:1.35;
+  color:#f5f5fa;transform-origin:top center;transition:opacity .18s ease,transform .22s cubic-bezier(.2,.9,.3,1.2)}
+.panel.closed{opacity:0;transform:scale(.96) translateY(-6px);pointer-events:none}
+.panel .arrow{position:absolute;top:-7px;width:14px;height:14px;transform:rotate(45deg);border-radius:3px 0 0 0;
+  background:rgba(70,66,140,.65);-webkit-backdrop-filter:blur(26px);backdrop-filter:blur(26px);box-shadow:inset 1px 1px 0 rgba(255,255,255,.4)}
+.p-hero{display:flex;align-items:center;gap:14px}
+.ring{position:relative;width:58px;height:58px;flex:none}
+.ring svg{width:58px;height:58px;transform:rotate(-90deg)}
+.ring circle{fill:none;stroke-width:5}
+.ring .track{stroke:rgba(255,255,255,.16)}
+.ring .prog{stroke:var(--violet-soft);stroke-linecap:round;transition:stroke-dashoffset .6s ease}
+.ring i{position:absolute;inset:16px;background:var(--ink-3);-webkit-mask:var(--icon) center/contain no-repeat;mask:var(--icon) center/contain no-repeat;transition:background .3s}
+.on .ring i{background:var(--violet-soft)}
+.p-title{font:600 22px/1.1 ui-rounded,"SF Pro Rounded",var(--sys);font-variant-numeric:tabular-nums}
+.p-sub{color:var(--ink-2);margin-top:3px;font-size:13px}
+.p-hero .grow{flex:1;min-width:0}
+.sw{position:relative;width:38px;height:22px;border-radius:999px;border:0;padding:0;cursor:pointer;flex:none;background:rgba(255,255,255,.22);transition:background .2s}
+.sw::after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.35);transition:transform .22s cubic-bezier(.3,1.4,.5,1)}
+.sw[aria-checked=true]{background:var(--violet)}
+.sw[aria-checked=true]::after{transform:translateX(16px)}
+.sw.mini{width:28px;height:16px}.sw.mini::after{width:12px;height:12px}.sw.mini[aria-checked=true]::after{transform:translateX(12px)}
+.p-block{margin-top:14px}
+.p-row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.p-label{font-weight:600}
+.small-btn{font:500 12px var(--sys);color:#fff;border:0;cursor:pointer;padding:4px 9px;border-radius:6px;background:rgba(255,255,255,.14);box-shadow:inset 0 1px 0 rgba(255,255,255,.18)}
+.small-btn:hover{background:rgba(255,255,255,.22)}
+.seg{display:flex;margin-top:6px;padding:2px;border-radius:7px;background:rgba(0,0,0,.22);box-shadow:inset 0 0 0 1px rgba(255,255,255,.08)}
+.seg button{flex:1;border:0;background:transparent;color:var(--ink-2);font:500 12px var(--sys);padding:4px 0;border-radius:5px;cursor:pointer}
+.seg button[aria-pressed=true]{background:rgba(255,255,255,.24);color:#fff;box-shadow:0 1px 2px rgba(0,0,0,.3)}
+.caption{color:var(--ink-3);font-size:11.5px;margin-top:5px}
+.p-item{display:flex;gap:10px;align-items:flex-start}
+.p-item svg{width:18px;height:18px;flex:none;margin-top:1px;color:var(--ink-3)}
+.p-item.phone-row.lit svg{color:var(--violet-soft)}
+.p-item .grow{flex:1}
+.p-item .cap{color:var(--ink-3);font-size:11.5px;margin-top:2px}
+.menu-btn{position:relative}
+.menu-btn>button{min-width:78px}
+.dropdown{position:absolute;right:0;top:30px;width:220px;padding:5px;border-radius:10px;z-index:9;font-size:13px;display:none;
+  background:rgba(34,32,78,.94);-webkit-backdrop-filter:blur(30px) saturate(180%);backdrop-filter:blur(30px) saturate(180%);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.16),0 18px 40px rgba(0,0,0,.5)}
+.dropdown.show{display:block}
+.dropdown .h{color:var(--ink-3);font-size:11px;font-weight:600;padding:6px 9px 3px}
+.dropdown button,.dropdown .t{display:block;width:100%;text-align:left;border:0;background:transparent;color:#fff;font:13px var(--sys);padding:4px 9px;border-radius:5px;cursor:pointer}
+.dropdown .t{cursor:default;color:var(--ink-2)}
+.dropdown button:hover{background:var(--violet)}
+.dropdown hr{border:0;border-top:1px solid rgba(255,255,255,.12);margin:4px 6px}
+.divider{height:1px;background:rgba(255,255,255,.12);margin:14px 0}
+.settings-toggle{display:flex;width:100%;align-items:center;justify-content:space-between;border:0;background:transparent;color:#fff;font:600 13px var(--sys);padding:0;cursor:pointer}
+.settings-toggle svg{width:12px;height:12px;color:var(--ink-3);transition:transform .2s}
+.settings-toggle[aria-expanded=true] svg{transform:rotate(90deg)}
+.settings{display:grid;gap:8px;margin-top:10px}
+.settings[hidden]{display:none}
+.settings .p-row{font-size:13px}
+.p-foot{display:flex;gap:8px}
+.p-foot .sp{flex:1}
+
+/* the phone that appears when phone access is on */
+.handset{position:absolute;left:7%;bottom:-16px;width:236px;height:470px;border-radius:44px;padding:10px;z-index:3;
+  transition:transform .6s cubic-bezier(.2,.9,.25,1),opacity .4s;transform:translateY(40px) rotate(-6deg);opacity:0}
+.phone-on .handset{transform:translateY(0) rotate(-6deg);opacity:1}
+.handset .screen{height:100%;border-radius:36px;overflow:hidden;background:linear-gradient(180deg,#17183f,#0e0f2b);padding:40px 14px 14px;display:flex;flex-direction:column;gap:9px;position:relative}
+.handset .notch{position:absolute;top:10px;left:50%;width:84px;height:24px;margin-left:-42px;border-radius:20px;background:#000}
+.handset .ttl{font:600 13px var(--sys);display:flex;align-items:center;gap:6px}
+.handset .ttl .dot{width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 8px var(--ok)}
+.handset .meta{font-size:11px;color:var(--ink-3);margin-top:-6px}
+.bub{font-size:12px;line-height:1.35;padding:8px 10px;border-radius:14px;max-width:92%;opacity:0;transform:translateY(6px);transition:all .35s}
+.bub.show{opacity:1;transform:none}
+.bub.me{align-self:flex-end;background:var(--violet);border-bottom-right-radius:4px}
+.bub.ai{background:rgba(255,255,255,.1);border-bottom-left-radius:4px}
+.bub.ai code{font:11px var(--mono);color:var(--violet-soft)}
+.bub.tool{font:10.5px/1.4 var(--mono);background:rgba(0,0,0,.3);color:var(--ink-2);border-radius:8px}
+.bub.tool b{color:var(--ok);font-weight:500}
+
+/* the lid: closes over the stage when the user tries it */
+.lid{position:absolute;inset:0;z-index:6;pointer-events:none;background:linear-gradient(180deg,#0b0c22,#05060f);transform-origin:bottom;transform:perspective(1400px) rotateX(-92deg);opacity:0;transition:transform .9s cubic-bezier(.6,.05,.3,1),opacity .2s;
+  display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px;color:var(--ink-2);font-size:14px}
+.lid.shut{transform:perspective(1400px) rotateX(0);opacity:1;pointer-events:auto}
+.lid img{width:64px;height:64px;opacity:.9}
+.lid .status{font:600 18px var(--display);color:var(--ink)}
+.lid-btn{position:absolute;right:22px;bottom:18px;z-index:7}
+
+@media (max-width:820px){
+  .stage{height:800px}
+  .handset{left:auto;right:-20px;bottom:-60px;transform:translateY(40px) rotate(6deg) scale(.82)}
+  .phone-on .handset{transform:translateY(0) rotate(6deg) scale(.82)}
+  .menubar .mi{display:none}
+}
+@media (max-width:420px){.panel{width:calc(100% - 24px)}}
+
+/* ---------- sections ---------- */
+section{padding:120px 0 0}
+.kicker{color:var(--violet-soft);font-weight:600;font-size:15px;margin:0 0 10px}
+h2{font:800 clamp(34px,5vw,60px)/1 var(--display);letter-spacing:-.03em;margin:0;max-width:16ch}
+.sub{color:var(--ink-2);font-size:18px;max-width:52ch;margin:18px 0 0}
+
+/* the evening, in time order */
+.timeline{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:48px}
+@media (max-width:960px){.timeline{grid-template-columns:1fr 1fr}}
+@media (max-width:560px){.timeline{grid-template-columns:1fr}}
+.moment{padding:22px;border-radius:22px;min-height:300px;display:flex;flex-direction:column}
+.moment time{font:700 34px/1 var(--display);letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.moment time small{font:500 13px var(--sys);color:var(--ink-3);margin-left:6px;letter-spacing:0}
+.moment h3{font:700 19px/1.2 var(--display);margin:16px 0 8px}
+.moment p{color:var(--ink-2);margin:0;font-size:15px}
+.moment .chip{margin-top:auto;padding-top:18px}
+.chip span{display:inline-flex;align-items:center;gap:7px;font:500 12px var(--mono);padding:6px 10px;border-radius:999px;background:rgba(0,0,0,.28);box-shadow:inset 0 0 0 1px rgba(255,255,255,.1);color:var(--ink-2)}
+.chip span::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--c,var(--violet-soft))}
+
+/* safety */
+.safety{display:grid;grid-template-columns:1.1fr 1fr;gap:28px;align-items:start;margin-top:48px}
+@media (max-width:900px){.safety{grid-template-columns:1fr}}
+.gauges{padding:26px;border-radius:26px}
+.gauge{display:grid;grid-template-columns:1fr auto;gap:4px 16px;padding:16px 0;border-top:1px solid var(--line)}
+.gauge:first-child{border-top:0;padding-top:0}
+.gauge .name{font-weight:600}
+.gauge .lim{font:700 22px/1 var(--display);text-align:right}
+.gauge .why{grid-column:1/-1;color:var(--ink-3);font-size:14px}
+.gauge .meter{grid-column:1/-1;height:6px;border-radius:9px;background:rgba(255,255,255,.08);overflow:hidden;margin-top:6px}
+.gauge .meter b{display:block;height:100%;border-radius:9px;background:linear-gradient(90deg,var(--violet),var(--violet-soft));width:var(--v)}
+.gauge .meter b.warm{background:linear-gradient(90deg,#c7718f,var(--spark))}
+.promises{display:grid;gap:14px}
+.promise{padding:22px 24px;border-radius:22px}
+.promise h3{font:700 19px/1.2 var(--display);margin:0 0 6px}
+.promise p{margin:0;color:var(--ink-2);font-size:15px}
+.promise code,.faq code{font:13px var(--mono);color:var(--violet-soft)}
+
+/* install */
+.install{display:grid;grid-template-columns:1fr 1.2fr;gap:28px;align-items:center;margin-top:48px}
+@media (max-width:900px){.install{grid-template-columns:1fr}}
+.term{border-radius:20px;overflow:hidden}
+.term .top{display:flex;align-items:center;gap:7px;padding:12px 14px;border-bottom:1px solid var(--line)}
+.term .top i{width:11px;height:11px;border-radius:50%;background:rgba(255,255,255,.25)}
+.term .top i:nth-child(1){background:#ff5f57}.term .top i:nth-child(2){background:#febc2e}.term .top i:nth-child(3){background:#28c840}
+.term .top span{margin-left:auto;font-size:12px;color:var(--ink-3)}
+.term pre{margin:0;padding:18px 20px;font:13.5px/1.75 var(--mono);color:var(--ink);overflow-x:auto}
+.term pre .c{color:var(--ink-3)}
+.term pre .p{color:var(--violet-soft);user-select:none}
+.term .copy{margin:0 20px 18px}
+.reqs{list-style:none;padding:0;margin:22px 0 0;display:grid;gap:10px;color:var(--ink-2)}
+.reqs li{display:flex;gap:10px}
+.reqs li::before{content:"";flex:none;width:6px;height:6px;margin-top:9px;border-radius:50%;background:var(--violet-soft)}
+
+/* faq */
+.faq{margin-top:40px;max-width:760px}
+.faq details{border-top:1px solid var(--line);padding:4px 0}
+.faq details:last-child{border-bottom:1px solid var(--line)}
+.faq summary{cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center;gap:16px;padding:18px 0;font:600 18px/1.3 var(--display)}
+.faq summary::-webkit-details-marker{display:none}
+.faq summary::after{content:"";flex:none;width:10px;height:10px;border-right:2px solid var(--ink-3);border-bottom:2px solid var(--ink-3);transform:rotate(45deg);transition:transform .2s;margin-right:4px}
+.faq details[open] summary::after{transform:rotate(-135deg)}
+.faq p{margin:0 0 20px;color:var(--ink-2);max-width:62ch}
+
+/* final */
+.final{text-align:center;padding:140px 0 60px}
+.final img{width:96px;height:96px;filter:drop-shadow(0 20px 40px rgba(107,102,242,.6))}
+.final h2{margin:24px auto 0;max-width:14ch}
+.final .ctas{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:30px}
+footer{color:var(--ink-3);font-size:13px;padding:40px 0 50px;display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap;border-top:1px solid var(--line)}
+footer a{color:var(--ink-2)}
+
+.toast{position:fixed;left:50%;bottom:28px;transform:translate(-50%,20px);opacity:0;z-index:50;padding:12px 18px;border-radius:999px;font-size:14px;transition:all .3s}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+</style>
+</head>
+<body>
+<div class="sky" aria-hidden="true"><canvas id="stars"></canvas></div>
+
+<!-- lens filter: bends the backdrop at the glass edges (Chromium only; elsewhere plain blur) -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <filter id="lens" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
+    <feTurbulence type="fractalNoise" baseFrequency="0.008 0.012" numOctaves="2" seed="4" result="n"/>
+    <feGaussianBlur in="n" stdDeviation="2" result="nb"/>
+    <feDisplacementMap in="SourceGraphic" in2="nb" scale="38" xChannelSelector="R" yChannelSelector="G"/>
+  </filter>
+</svg>
+
+<nav>
+  <div class="bar glass">
+    <a class="brand" href="#top"><img src="img/app-icon.png" alt="">Insomnia</a>
+    <div class="links">
+      <a href="#evening">How it works</a>
+      <a href="#safety">Safety</a>
+      <a href="#install">Install</a>
+      <a class="gh" href="https://github.com/ArtemKorchunov/insomnia">GitHub</a>
+    </div>
+  </div>
+</nav>
+
+<main id="top">
+<div class="wrap">
+  <header class="hero">
+    <h1>Close the lid. Claude keeps working.</h1>
+    <p class="lede">A free menu bar app that keeps your MacBook running with the lid shut, lets you reach Claude Code from your phone, and puts the Mac to sleep by itself when it gets too hot, too low or too late.</p>
+    <div class="ctas">
+      <button class="btn btn-primary" data-copy="git clone https://github.com/ArtemKorchunov/insomnia.git ~/insomnia && cd ~/insomnia && ./install.sh">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16.4 12.6c0-2.5 2-3.6 2.1-3.7-1.2-1.7-3-1.9-3.6-2-1.5-.2-3 .9-3.8.9-.8 0-2-.9-3.3-.9-1.7 0-3.3 1-4.2 2.5-1.8 3.1-.5 7.7 1.3 10.2.9 1.2 1.9 2.6 3.2 2.6 1.3-.1 1.8-.8 3.3-.8 1.6 0 2 .8 3.3.8 1.4 0 2.3-1.2 3.1-2.5 1-1.4 1.4-2.8 1.4-2.9-.1 0-2.8-1.1-2.8-4.2zM13.9 5.1c.7-.9 1.2-2 1-3.1-1 0-2.2.7-2.9 1.5-.6.7-1.2 1.9-1 3 1.1.1 2.2-.6 2.9-1.4z"/></svg>
+        Copy the install command
+      </button>
+      <a class="btn btn-glass" href="https://github.com/ArtemKorchunov/insomnia">View on GitHub</a>
+    </div>
+    <p class="fine">Free and open source · macOS 13 or newer · Built for MacBooks</p>
+  </header>
+
+  <!-- A Mac at night. The panel below is the real app's panel, rebuilt so you can use it here. -->
+  <div class="stage" id="stage">
+    <div class="moon" aria-hidden="true"></div>
+    <div class="hills" aria-hidden="true"></div>
+    <div class="menubar">
+      <svg class="apple" viewBox="0 0 24 24" fill="#fff" aria-hidden="true"><path d="M16.4 12.6c0-2.5 2-3.6 2.1-3.7-1.2-1.7-3-1.9-3.6-2-1.5-.2-3 .9-3.8.9-.8 0-2-.9-3.3-.9-1.7 0-3.3 1-4.2 2.5-1.8 3.1-.5 7.7 1.3 10.2.9 1.2 1.9 2.6 3.2 2.6 1.3-.1 1.8-.8 3.3-.8 1.6 0 2 .8 3.3.8 1.4 0 2.3-1.2 3.1-2.5 1-1.4 1.4-2.8 1.4-2.9-.1 0-2.8-1.1-2.8-4.2zM13.9 5.1c.7-.9 1.2-2 1-3.1-1 0-2.2.7-2.9 1.5-.6.7-1.2 1.9-1 3 1.1.1 2.2-.6 2.9-1.4z"/></svg>
+      <span><b>Terminal</b></span><span class="mi">Shell</span><span class="mi">Edit</span><span class="mi">View</span>
+      <div class="right">
+        <button class="mb-eye open" id="mbEye" aria-label="Insomnia menu" aria-expanded="true"><i></i><span id="mbTime"></span></button>
+        <span id="mbClock">22:40</span>
+      </div>
+    </div>
+
+    <div class="panel glass refract" id="panel" role="dialog" aria-label="Insomnia panel">
+      <div class="arrow" id="arrow"></div>
+      <div class="p-hero">
+        <div class="ring" aria-hidden="true">
+          <svg viewBox="0 0 58 58"><circle class="track" cx="29" cy="29" r="25"/><circle class="prog" id="ringProg" cx="29" cy="29" r="25" stroke-dasharray="157.08" stroke-dashoffset="157.08"/></svg>
+          <i id="ringEye"></i>
+        </div>
+        <div class="grow">
+          <div class="p-title" id="pTitle">Sleeping normally</div>
+          <div class="p-sub" id="pSub">Turn on to keep working with the lid closed.</div>
+        </div>
+        <button class="sw" id="mainSw" role="switch" aria-checked="false" aria-label="Keep the Mac awake"></button>
+      </div>
+
+      <div class="p-block">
+        <div class="p-row"><span class="p-label" id="durLabel">When on, stay awake for</span><button class="small-btn" id="plus1" hidden>+1 h</button></div>
+        <div class="seg" id="seg" role="group" aria-label="Stay awake for"></div>
+        <div class="caption" id="durNote">Picking a time turns it on. Then it sleeps again.</div>
+      </div>
+
+      <div class="p-block p-item phone-row" id="phRow">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/><path id="waves" d="M3.5 9c-1 2-1 4 0 6M20.5 9c1 2 1 4 0 6" opacity="0"/></svg>
+        <div class="grow">
+          <div class="p-label" id="phTitle">Phone access off</div>
+          <div class="cap" id="phCap">Lets your phone open and start Claude chats on this Mac.</div>
+        </div>
+        <div class="menu-btn">
+          <button class="small-btn" id="phBtn" aria-haspopup="menu" aria-expanded="false">Turn On</button>
+          <div class="dropdown" id="phMenu" role="menu"></div>
+        </div>
+      </div>
+
+      <div class="p-block p-item">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5l-8-3zm0 2.2V19.8c-3.4-1.4-6-4.9-6-8.8V6.4l6-2.2z"/></svg>
+        <div class="grow">
+          <div class="p-label" id="batt">Battery 92%, 31.4 °C, on charger</div>
+          <div class="cap">Sleeps by itself below 20% on battery, above 45 °C, or when it runs hot.</div>
+        </div>
+      </div>
+
+      <div class="divider"></div>
+      <button class="settings-toggle" id="setBtn" aria-expanded="false">Settings <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 2l4 4-4 4"/></svg></button>
+      <div class="settings" id="settings" hidden>
+        <div class="p-row"><span>Low Power Mode while on</span><button class="sw mini" role="switch" aria-checked="false"></button></div>
+        <div class="p-row"><span>New phone chats start from origin/main</span><button class="sw mini" role="switch" aria-checked="true"></button></div>
+        <div class="p-row"><span>Time left in the menu bar</span><button class="sw mini" id="swMbTime" role="switch" aria-checked="true"></button></div>
+        <div class="p-row"><span>Lock screen when the lid closes</span><button class="sw mini" role="switch" aria-checked="true"></button></div>
+        <div class="p-row"><span>Update automatically</span><button class="sw mini" role="switch" aria-checked="true"></button></div>
+      </div>
+      <div class="divider"></div>
+      <div class="p-foot"><button class="small-btn" id="lockBtn">Lock Screen</button><button class="small-btn" id="logBtn">Open Log</button><span class="sp"></span><button class="small-btn" id="quitBtn">Quit</button></div>
+    </div>
+
+    <div class="handset glass" aria-hidden="true">
+      <div class="screen">
+        <div class="notch"></div>
+        <div class="ttl"><span class="dot"></span>MacBook · api</div>
+        <div class="meta">Claude Code · worktree from origin/main</div>
+        <div class="bub me" data-i="0">The nightly import keeps timing out. Find out why and fix it.</div>
+        <div class="bub tool" data-i="1">Read src/jobs/import.ts<br>Bash npm test -- import</div>
+        <div class="bub ai" data-i="2">Each batch opens its own DB connection. I pooled them in <code>import.ts</code>.</div>
+        <div class="bub tool" data-i="3"><b>✓ 42 passed</b> · 0 failed · 18.4 s</div>
+        <div class="bub ai" data-i="4">Opened a pull request with the fix.</div>
+      </div>
+    </div>
+
+    <div class="lid" id="lid">
+      <img src="img/app-icon.png" alt="">
+      <div class="status" id="lidStatus">Lid closed. Still awake.</div>
+      <div id="lidSub">Screen locked · fans and throttling left to macOS</div>
+    </div>
+    <button class="btn btn-glass lid-btn" id="lidBtn">Close the lid</button>
+    <div class="hint"><kbd>Try it</kbd> Flip the switch, pick a time, turn on phone access.</div>
+  </div>
+</div>
+
+<div class="wrap">
+  <section id="evening">
+    <p class="kicker">One evening with Insomnia</p>
+    <h2>Start it before bed. Check on it from bed.</h2>
+    <p class="sub">A long agent run shouldn't stop because you closed the laptop, and it shouldn't stay awake all night because you forgot about it.</p>
+    <div class="timeline">
+      <article class="moment glass">
+        <time>22:40</time>
+        <h3>Turn it on for 4 hours</h3>
+        <p>One switch in the menu bar. The ring shows the time left, and the stop time is right under it.</p>
+        <div class="chip"><span>Sleeps at 02:40</span></div>
+      </article>
+      <article class="moment glass">
+        <time>22:41</time>
+        <h3>Close the lid</h3>
+        <p>The screen locks and turns off. Builds, downloads and Claude Code keep running. Fans and throttling stay with macOS.</p>
+        <div class="chip"><span style="--c:var(--ok)">Awake, lid closed</span></div>
+      </article>
+      <article class="moment glass">
+        <time>00:15<small>from your phone</small></time>
+        <h3>Ask Claude for one more thing</h3>
+        <p>Open the Claude app, go to Code, pick this Mac. Each new chat gets its own worktree that starts from origin/main, never from a half-done branch.</p>
+        <div class="chip"><span>~/code/api · new worktree</span></div>
+      </article>
+      <article class="moment glass">
+        <time>02:40</time>
+        <h3>It stops by itself</h3>
+        <p>The time is up, so phone access stops and the Mac goes to sleep. You don't have to remember to switch it off.</p>
+        <div class="chip"><span style="--c:var(--spark)">Time limit reached</span></div>
+      </article>
+    </div>
+  </section>
+
+  <section id="safety">
+    <p class="kicker">Safety</p>
+    <h2>It always gives sleep back.</h2>
+    <p class="sub">A closed laptop in a bag is the worry. Insomnia checks every 30 seconds and puts the Mac to sleep as soon as any limit trips.</p>
+    <div class="safety">
+      <div class="gauges glass">
+        <div class="gauge"><span class="name">Thermal pressure</span><span class="lim">Heavy</span><b class="meter"><b style="--v:28%"></b></b><span class="why">Read from macOS with powermetrics. Heavy or worse means sleep now.</span></div>
+        <div class="gauge"><span class="name">Battery temperature</span><span class="lim">45 °C</span><b class="meter"><b class="warm" style="--v:68%"></b></b><span class="why">Change it with --max-temp.</span></div>
+        <div class="gauge"><span class="name">Charge on battery</span><span class="lim">20%</span><b class="meter"><b style="--v:88%"></b></b><span class="why">Phone access has the same guard, so a forgotten laptop never drains to zero.</span></div>
+        <div class="gauge"><span class="name">Your time limit</span><span class="lim">1–12 h</span><b class="meter"><b style="--v:55%"></b></b><span class="why">Change it while it runs, or add an hour. Phone access stops with it.</span></div>
+      </div>
+      <div class="promises">
+        <div class="promise glass"><h3>Cooling is never touched</h3><p>Fans, SMC thermal control and CPU throttling work exactly as with the lid open. Insomnia only stops the lid and idle from putting the Mac to sleep.</p></div>
+        <div class="promise glass"><h3>Even a crash can't leave sleep off</h3><p>A small login agent checks every minute. If sleep is still off with nothing watching it, after a <code>kill -9</code> or a reboot, it turns sleep back on.</p></div>
+        <div class="promise glass"><h3>Passwordless only for what it runs</h3><p>An optional rule allows just the exact <code>pmset</code> and <code>powermetrics</code> commands Insomnia uses, checked with visudo. The script itself never gets root.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="install">
+    <p class="kicker">Install</p>
+    <h2>Three lines in Terminal.</h2>
+    <div class="install">
+      <div>
+        <p class="sub" style="margin-top:0">It installs the <code style="font:15px var(--mono);color:var(--violet-soft)">insomnia</code> command and builds the menu bar app into your Applications folder. Updates come from GitHub with one click in the panel, or automatically.</p>
+        <ul class="reqs">
+          <li>macOS 13 or newer on a MacBook, tested on Apple Silicon</li>
+          <li>Xcode Command Line Tools for the menu bar app</li>
+          <li>For phone access: Claude Code signed in with a Pro, Max, Team or Enterprise plan</li>
+        </ul>
+      </div>
+      <div class="term glass">
+        <div class="top"><i></i><i></i><i></i><span>Terminal</span></div>
+<pre><span class="p">$ </span>git clone https://github.com/ArtemKorchunov/insomnia.git ~/insomnia
+<span class="p">$ </span>cd ~/insomnia
+<span class="p">$ </span>./install.sh
+<span class="c"># later, from anywhere</span>
+<span class="p">$ </span>insomnia on --hours 4 --remote all
+<span class="p">$ </span>insomnia update</pre>
+        <div class="copy"><button class="btn btn-glass" data-copy="git clone https://github.com/ArtemKorchunov/insomnia.git ~/insomnia && cd ~/insomnia && ./install.sh">Copy the install command</button></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="faq">
+    <p class="kicker">Questions</p>
+    <h2>Before you close the lid.</h2>
+    <div class="faq">
+      <details><summary>Is it safe to run a MacBook with the lid closed?</summary><p>macOS keeps cooling it the same way, through the keyboard deck instead of the screen. Insomnia adds the limits macOS doesn't have for this case: it sleeps the Mac on Heavy thermal pressure, a battery above 45 °C, or a charge under 20% on battery. Keep it on a desk or a stand, not in a bag.</p></details>
+      <details><summary>Do I need Claude to use it?</summary><p>No. Without Claude it keeps any long job running with the lid closed: builds, downloads, renders. Phone access is the optional part, and it uses Claude Code's own Remote Control.</p></details>
+      <details><summary>Will it ask for my password?</summary><p>Changing sleep settings needs admin rights, so on and off ask once each time, and Touch ID works. Run <code>insomnia install-nopasswd</code> to allow only Insomnia's exact commands without a prompt.</p></details>
+      <details><summary>What happens to phone chats when Insomnia turns off?</summary><p>When the time limit runs out, phone access stops too, so a timed session ends fully. If you switch Insomnia off yourself, phone access keeps running while the Mac is awake.</p></details>
+      <details><summary>Why do phone chats start from origin/main?</summary><p>So a chat you start from bed doesn't land on whatever branch the folder had checked out. Each one gets its own git worktree. You can switch this off in Settings to work in the folder itself.</p></details>
+      <details><summary>Does it cost anything?</summary><p>No. It's free and open source under the MIT license.</p></details>
+    </div>
+  </section>
+
+  <div class="final">
+    <img src="img/app-icon.png" alt="">
+    <h2>Let the laptop sleep when you're done, not before.</h2>
+    <div class="ctas">
+      <button class="btn btn-primary" data-copy="git clone https://github.com/ArtemKorchunov/insomnia.git ~/insomnia && cd ~/insomnia && ./install.sh">Copy the install command</button>
+      <a class="btn btn-glass" href="https://github.com/ArtemKorchunov/insomnia">View on GitHub</a>
+    </div>
+  </div>
+  <footer><span>Insomnia · MIT license</span><a href="https://github.com/ArtemKorchunov/insomnia">github.com/ArtemKorchunov/insomnia</a></footer>
+</div>
+</main>
+<div class="toast glass" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(() => {
+  const $ = s => document.querySelector(s);
+  const ICON = {awake:'url(img/eye-awake.png)', asleep:'url(img/eye-asleep.png)', waking:'url(img/eye-waking.png)'};
+  const FOLDERS = ['~/code/api','~/code/web','~/code/infra'];
+  const CHOICES = [0,1,2,4,8,12];
+  const C = 2*Math.PI*25;
+
+  // The demo runs on a fake clock that starts at 22:40, a minute per real second while on.
+  let clock = new Date(2026,10,6,22,40).getTime();
+  const S = {on:false, busy:false, hours:4, start:null, end:null, phone:[], mbTime:true, lid:false};
+
+  const fmt = t => new Date(t).toTimeString().slice(0,5);
+  const left = () => {
+    const m = Math.max(0, Math.round((S.end - clock)/60000));
+    return m >= 60 ? (m%60 ? `${Math.floor(m/60)} h ${m%60} min` : `${m/60} h`) : `${m} min`;
+  };
+
+  function render(){
+    const panel = $('#panel');
+    panel.classList.toggle('on', S.on);
+    document.querySelector('.stage').classList.toggle('phone-on', S.phone.length>0);
+    const icon = S.busy ? ICON.waking : (S.on ? ICON.awake : ICON.asleep);
+    $('#ringEye').style.setProperty('--icon', icon);
+    $('#mbEye').style.setProperty('--icon', icon);
+    $('#mainSw').setAttribute('aria-checked', S.on);
+    $('#mainSw').style.visibility = S.busy ? 'hidden' : 'visible';
+
+    let title, sub;
+    if (S.busy){ title='One moment…'; sub='Changing sleep settings'; }
+    else if (S.on){ title = S.end ? `${left()} left` : 'Awake';
+      sub = S.end ? `Sleeps at ${fmt(S.end)}. Safe to close the lid.` : 'No time limit. Safe to close the lid.'; }
+    else { title='Sleeping normally'; sub = S.stopped || 'Turn on to keep working with the lid closed.'; }
+    $('#pTitle').textContent = title; $('#pSub').textContent = sub;
+
+    const p = S.on ? (S.end ? Math.max(0,(S.end-clock)/(S.end-S.start)) : 1) : 0;
+    $('#ringProg').style.strokeDashoffset = C*(1-p);
+
+    $('#durLabel').textContent = S.on ? 'Stay awake for' : 'When on, stay awake for';
+    $('#plus1').hidden = !(S.on && S.end);
+    $('#durNote').textContent = S.on ? 'Counts from now. Phone access stops with it.' : 'Picking a time turns it on. Then it sleeps again.';
+    [...$('#seg').children].forEach(b => b.setAttribute('aria-pressed', +b.dataset.h === S.hours));
+
+    const n = S.phone.length;
+    $('#phTitle').textContent = n ? (n===1 ? `Phone access in ${S.phone[0].split('/').pop()}` : `Phone access in ${n} folders`) : 'Phone access off';
+    $('#phCap').textContent = n ? 'On your phone: Claude app, Code, then this Mac.' : 'Lets your phone open and start Claude chats on this Mac.';
+    $('#phBtn').textContent = n ? 'Manage' : 'Turn On';
+    $('#waves').setAttribute('opacity', n ? 1 : 0);
+    $('#phRow').classList.toggle('lit', n>0);
+
+    $('#mbTime').textContent = (S.on && S.end && S.mbTime) ? left().replace(' min','m').replace(' h','h') : '';
+    $('#mbClock').textContent = fmt(clock);
+    placeArrow();
+  }
+
+  function placeArrow(){
+    const stage = $('#stage').getBoundingClientRect(), eye = $('#mbEye').getBoundingClientRect(), panel = $('#panel');
+    const w = panel.offsetWidth, cx = eye.left + eye.width/2 - stage.left;
+    const x = Math.min(Math.max(12, cx - w/2), stage.width - w - 12);
+    panel.style.left = x + 'px';
+    $('#arrow').style.left = (cx - x - 7) + 'px';
+  }
+
+  function turnOn(){
+    if (S.on || S.busy) return;
+    S.busy = true; S.stopped = null; render();
+    setTimeout(() => { S.busy=false; S.on=true; S.start=clock; S.end = S.hours ? clock + S.hours*3600e3 : null; render(); }, 700);
+  }
+  function turnOff(reason){
+    S.on=false; S.end=null;
+    if (reason){ S.stopped = `Stopped at ${fmt(clock)}: ${reason}.`; S.phone=[]; stopChat(); }
+    render();
+  }
+
+  // segmented "Stay awake for"
+  CHOICES.forEach(h => { const b=document.createElement('button'); b.dataset.h=h; b.textContent = h? `${h} h` : 'No limit';
+    b.onclick = () => { S.hours=h; if (S.on){ S.start=clock; S.end = h? clock+h*3600e3 : null; render(); } else { render(); turnOn(); } };
+    $('#seg').appendChild(b); });
+
+  $('#mainSw').onclick = () => S.on ? turnOff() : turnOn();
+  $('#plus1').onclick = () => { S.end += 3600e3; render(); };
+  $('#mbEye').onclick = () => { const p=$('#panel'), c=p.classList.toggle('closed'); $('#mbEye').classList.toggle('open',!c); $('#mbEye').setAttribute('aria-expanded',!c); };
+  $('#setBtn').onclick = e => { const s=$('#settings'); s.hidden=!s.hidden; e.currentTarget.setAttribute('aria-expanded', !s.hidden); placeArrow(); };
+  document.querySelectorAll('.settings .sw').forEach(sw => sw.onclick = () => { const v = sw.getAttribute('aria-checked')!=='true'; sw.setAttribute('aria-checked', v); if (sw.id==='swMbTime'){ S.mbTime=v; render(); } });
+  $('#lockBtn').onclick = () => toast('In the app this locks the screen. Everything keeps running.');
+  $('#logBtn').onclick = () => toast('Opens /tmp/insomnia-watchdog.log in Console.');
+  $('#quitBtn').onclick = () => toast('Nice try. The demo stays.');
+
+  // phone access menu
+  const menu = $('#phMenu');
+  function buildMenu(){
+    const n = S.phone.length, add = FOLDERS.filter(f => !S.phone.includes(f));
+    let h = '';
+    if (n){ h += `<button data-a="copy">Copy Phone Link</button><hr><div class="h">In</div>` + S.phone.map(f=>`<div class="t">${f}</div>`).join('') + '<hr>'; }
+    h += `<div class="h">${n ? 'Add' : (S.on ? 'Turn on in' : 'Turn on Insomnia with phone access in')}</div>`;
+    if (add.length) h += `<button data-a="all">All Recent Folders</button>` + add.map(f=>`<button data-a="dir" data-d="${f}">${f}</button>`).join('');
+    h += `<button data-a="choose">Choose Folder…</button>`;
+    if (n) h += `<hr><button data-a="stop">Stop Phone Access</button>`;
+    menu.innerHTML = h;
+  }
+  $('#phBtn').onclick = e => { e.stopPropagation(); buildMenu(); const s = menu.classList.toggle('show'); $('#phBtn').setAttribute('aria-expanded', s); };
+  document.addEventListener('click', () => { menu.classList.remove('show'); $('#phBtn').setAttribute('aria-expanded', false); });
+  menu.onclick = e => {
+    const b = e.target.closest('button'); if (!b) return;
+    const a = b.dataset.a;
+    if (a==='copy') toast('Phone link copied.');
+    if (a==='choose') toast('Opens a folder picker in the app.');
+    if (a==='all') addPhone(FOLDERS);
+    if (a==='dir') addPhone([b.dataset.d]);
+    if (a==='stop'){ S.phone=[]; stopChat(); render(); }
+  };
+  function addPhone(dirs){ dirs.forEach(d => S.phone.includes(d) || S.phone.push(d)); if (!S.on) turnOn(); render(); playChat(); }
+
+  // the phone chat plays out once phone access is on
+  let chatTimers = [];
+  function playChat(){ if (chatTimers.length) return; document.querySelectorAll('.bub').forEach(b => chatTimers.push(setTimeout(()=>b.classList.add('show'), 600 + b.dataset.i*1100))); }
+  function stopChat(){ chatTimers.forEach(clearTimeout); chatTimers=[]; document.querySelectorAll('.bub').forEach(b=>b.classList.remove('show')); }
+
+  // close the lid
+  $('#lidBtn').onclick = () => {
+    const lid = $('#lid'), shut = !lid.classList.contains('shut');
+    lid.classList.toggle('shut', shut);
+    $('#lidBtn').textContent = shut ? 'Open the lid' : 'Close the lid';
+    if (shut){
+      $('#lidStatus').textContent = S.on ? 'Lid closed. Still awake.' : 'Lid closed. Asleep.';
+      $('#lidSub').textContent = S.on ? (S.end ? `Screen locked · sleeps at ${fmt(S.end)}` : 'Screen locked · no time limit') + (S.phone.length? ' · phone access on' : '')
+                                     : 'Nothing kept it awake. Turn Insomnia on first.';
+    }
+  };
+
+  // time moves a minute per second while on, so the ring visibly drains
+  setInterval(() => {
+    if (!S.on) return;
+    clock += 60e3;
+    if (S.end && clock >= S.end) turnOff('time limit reached');
+    else render();
+  }, 1000);
+
+  // copy buttons
+  document.querySelectorAll('[data-copy]').forEach(b => b.onclick = async () => {
+    try { await navigator.clipboard.writeText(b.dataset.copy); toast('Copied. Paste it into Terminal.'); }
+    catch { toast(b.dataset.copy); }
+  });
+  let tt; function toast(m){ const t=$('#toast'); t.textContent=m; t.classList.add('show'); clearTimeout(tt); tt=setTimeout(()=>t.classList.remove('show'),2600); }
+
+  // pointer sheen on glass
+  document.addEventListener('pointermove', e => {
+    document.querySelectorAll('.glass').forEach(g => { const r=g.getBoundingClientRect();
+      if (e.clientY < r.top-200 || e.clientY > r.bottom+200) return;
+      g.style.setProperty('--mx', (e.clientX-r.left)+'px'); g.style.setProperty('--my', (e.clientY-r.top)+'px'); });
+  }, {passive:true});
+
+  // refraction only where backdrop-filter accepts an SVG filter (Chromium)
+  if (!/Chrome\//.test(navigator.userAgent)) document.querySelectorAll('.refract').forEach(e => e.classList.remove('refract'));
+
+  // stars
+  const cv = $('#stars'), cx = cv.getContext('2d'); let stars=[];
+  function size(){ cv.width = innerWidth*devicePixelRatio; cv.height = innerHeight*devicePixelRatio;
+    stars = Array.from({length: Math.round(innerWidth*innerHeight/9000)}, () => ({x:Math.random()*cv.width, y:Math.random()*cv.height*.8, r:Math.random()*1.3*devicePixelRatio+.3, p:Math.random()*6.28})); }
+  const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function draw(t){ cx.clearRect(0,0,cv.width,cv.height);
+    for (const s of stars){ cx.globalAlpha = .35 + .45*Math.sin(s.p + t/1400); cx.fillStyle='#fff'; cx.beginPath(); cx.arc(s.x,s.y,s.r,0,6.28); cx.fill(); }
+    if (!still) requestAnimationFrame(draw); }
+  size(); addEventListener('resize', () => { size(); placeArrow(); if (still) draw(0); }); requestAnimationFrame(draw);
+
+  render();
+  // first impression: it turns itself on so the ring and the time are already there
+  setTimeout(turnOn, 900);
+})();
+</script>
+</body>
+</html>
