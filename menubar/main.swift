@@ -126,6 +126,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject, UNUs
         statusItem.behavior = []
         statusItem.button?.target = self
         statusItem.button?.action = #selector(togglePopover)
+        // The time next to the eye makes the item wider or narrower; follow its
+        // window so the open panel keeps pointing at the eye.
+        if let window = statusItem.button?.window {
+            for name in [NSWindow.didResizeNotification, NSWindow.didMoveNotification] {
+                NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
+                    self?.reanchorPopover()
+                }
+            }
+        }
         popover.behavior = .transient
         popover.animates = true
         // The popover takes its size from the SwiftUI content and follows it as
@@ -353,12 +362,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject, UNUs
         // The item got wider or narrower (the time appeared or went away), so the
         // open panel's arrow would point at where the eye used to be. Showing an
         // open popover again moves it to the new spot.
+        // macOS resizes the item's window a moment later, so re-anchor once it has
+        // (the window notifications below), with a late retry as a fallback.
         if widthChanges && popover.isShown {
-            DispatchQueue.main.async {
-                guard self.popover.isShown, let button = self.statusItem.button else { return }
-                self.popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { self.reanchorPopover() }
         }
+    }
+
+    /// Point the open panel's arrow at the eye again, wherever the item now is.
+    func reanchorPopover() {
+        guard popover.isShown, let button = statusItem.button else { return }
+        button.superview?.layoutSubtreeIfNeeded()
+        popover.positioningRect = button.bounds
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
     }
 
     var updateReady: Bool { (Int(updateInfo["behind"] ?? "") ?? 0) > 0 }
