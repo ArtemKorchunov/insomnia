@@ -692,6 +692,18 @@ update_state() {
   git -C "$repo" log --format='change=%s' 'HEAD..@{u}' | head -n 8
 }
 
+# Rebuild the menu bar app when its code changed since the commit it was built
+# from (stamped by build.sh; $2 stands in for apps built before the stamp existed).
+rebuild_app_if_behind() {
+  local repo="$1" fallback="$2" app="$HOME/Applications/Insomnia.app" built
+  [ -d "$app" ] || return 0
+  built=$(cat "$app/Contents/Resources/built-from" 2>/dev/null)
+  git -C "$repo" cat-file -e "${built:-none}^{commit}" 2>/dev/null || built=$fallback
+  git -C "$repo" diff --quiet "$built" HEAD -- menubar && return 0
+  echo "Rebuilding the menu bar app..."
+  "$repo/menubar/build.sh" || { echo "The app didn't build. The command is updated; run $repo/menubar/build.sh to see why." >&2; return 1; }
+}
+
 cmd_update() {
   local check=0 repo old behind
   case "${1:-}" in
@@ -709,6 +721,7 @@ cmd_update() {
   git -C "$repo" fetch --quiet || { echo "Couldn't reach GitHub. Check the connection and try again." >&2; return 1; }
   behind=$(git -C "$repo" rev-list --count 'HEAD..@{u}')
   if [ "$behind" = 0 ]; then
+    [ "$check" = 1 ] || rebuild_app_if_behind "$repo" HEAD || return 1
     echo "Insomnia is up to date ($(git -C "$repo" log -1 --format='%h from %cd' --date=short))."
     return 0
   fi
@@ -732,10 +745,7 @@ cmd_update() {
   # the update landed and what's new.
   mkdir -p "$(dirname "$UPDATED_FILE")"
   git -C "$repo" log --format='%s' "$old..HEAD" > "$UPDATED_FILE"
-  if [ -d "$HOME/Applications/Insomnia.app" ] && ! git -C "$repo" diff --quiet "$old" HEAD -- menubar; then
-    echo "Rebuilding the menu bar app..."
-    "$repo/menubar/build.sh" || { echo "The app didn't build. The command is updated; run $repo/menubar/build.sh to see why." >&2; return 1; }
-  fi
+  rebuild_app_if_behind "$repo" "$old" || return 1
   if running_pid >/dev/null; then
     echo "The session that's on keeps running as it was; the update applies from the next start."
   fi

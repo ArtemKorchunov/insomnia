@@ -46,6 +46,9 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 </plist>
 PLIST
 
+# Which commit this app was built from, so "insomnia update" can tell when the
+# app is behind the code (for example after an update that died before rebuilding).
+git -C "$SRC_DIR" rev-parse HEAD > "$APP/Contents/Resources/built-from" 2>/dev/null || true
 codesign --force --sign - "$APP" >/dev/null
 touch "$APP"
 open "$APP"
