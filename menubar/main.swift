@@ -771,7 +771,7 @@ struct PanelView: View {
     var durationNote: String {
         if app.limitFixed { return "Started before limits could change, so picking one restarts it. Phone access stays on." }
         if app.isRunning { return "Counts from now. Phone access stops with it." }
-        return "Pick a time to turn on now. Then it sleeps again and phone access stops."
+        return "Picking a time turns it on. Then it sleeps again."
     }
 
     var phoneRow: some View {
