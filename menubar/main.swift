@@ -93,6 +93,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject, UNUs
     var remoteDirs: [String] {
         (state["remote_dirs"] ?? state["remote_dir"] ?? "").split(separator: "|").map(String.init)
     }
+    /// Recent folders that can still get phone access: not on already, and not the
+    /// home folder, where Remote Control never saves trust and so can't start.
+    var addableDirs: [String] {
+        func norm(_ p: String) -> String { URL(fileURLWithPath: p).standardizedFileURL.resolvingSymlinksInPath().path }
+        let on = Set(remoteDirs.map(norm))
+        let home = norm(NSHomeDirectory())
+        return recentDirs.filter { let n = norm($0); return n != home && !on.contains(n) }
+    }
     /// A session started before limits could change: its stop time is shown but fixed.
     var limitFixed: Bool { isRunning && state["deadline_fixed"] == "1" }
     /// When the running session stops on its own; nil for no limit or not known.
@@ -798,9 +806,9 @@ struct PanelView: View {
                     Divider()
                 }
                 Section(app.remoteOn ? "Add" : (app.isRunning ? "Turn on in" : "Turn on Insomnia with phone access in")) {
-                    if !app.recentDirs.isEmpty {
+                    if !app.addableDirs.isEmpty {
                         Button("All Recent Folders") { app.phoneAccess(in: "all") }
-                        ForEach(app.recentDirs, id: \.self) { dir in
+                        ForEach(app.addableDirs, id: \.self) { dir in
                             Button(tildePath(dir)) { app.phoneAccess(in: dir) }
                         }
                     }
