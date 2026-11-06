@@ -69,6 +69,9 @@ Usage:
                           running (after a crash, kill -9 or reboot mid-session).
   insomnia heal-agent install|uninstall|status
                           A login agent that runs "heal" at login and every minute.
+  insomnia update [--check]  Get the latest Insomnia from GitHub (git pull in the
+                          cloned folder) and rebuild the menu bar app if it changed.
+                          --check only says whether an update is waiting.
   insomnia allow-schedules  Allow Claude to turn Remote Control on for scheduled-task
                           runs (adds one rule to ~/.claude/settings.json), so the
                           phone can open them. "status" lists recent runs still off.
@@ -624,6 +627,58 @@ PLIST
   esac
 }
 
+# The cloned folder this command runs from (the installer links ~/.local/bin/insomnia into it).
+insomnia_repo() {
+  local self
+  self=$(realpath "$0" 2>/dev/null) || self="$0"
+  (cd "$(dirname "$self")/.." && pwd)
+}
+
+cmd_update() {
+  local check=0 repo old behind
+  case "${1:-}" in
+    --check) check=1 ;;
+    "") ;;
+    *) echo "Usage: insomnia update [--check]" >&2; return 2 ;;
+  esac
+  repo=$(insomnia_repo)
+  if ! git -C "$repo" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
+     || ! git -C "$repo" rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1; then
+    echo "$repo isn't a git clone that tracks GitHub, so it can't update itself." >&2
+    echo "Reinstall: git clone https://github.com/ArtemKorchunov/insomnia.git ~/insomnia && ~/insomnia/install.sh" >&2
+    return 1
+  fi
+  git -C "$repo" fetch --quiet || { echo "Couldn't reach GitHub. Check the connection and try again." >&2; return 1; }
+  behind=$(git -C "$repo" rev-list --count 'HEAD..@{u}')
+  if [ "$behind" = 0 ]; then
+    echo "Insomnia is up to date ($(git -C "$repo" log -1 --format='%h from %cd' --date=short))."
+    return 0
+  fi
+  if [ "$check" = 1 ]; then
+    echo "$behind update(s) waiting. Run: insomnia update"
+    git -C "$repo" log --format='  - %s' 'HEAD..@{u}'
+    return 0
+  fi
+  if [ -n "$(git -C "$repo" status --porcelain --untracked-files=no)" ]; then
+    echo "You changed files in $repo. Commit or stash them (git -C $repo stash), then run insomnia update again." >&2
+    return 1
+  fi
+  old=$(git -C "$repo" rev-parse HEAD)
+  if ! git -C "$repo" merge --ff-only --quiet '@{u}'; then
+    echo "Your copy in $repo has commits of its own, so it can't fast-forward. Run git -C $repo pull and sort it out there." >&2
+    return 1
+  fi
+  echo "Updated Insomnia to $(git -C "$repo" log -1 --format=%h). New:"
+  git -C "$repo" log --format='  - %s' "$old..HEAD"
+  if [ -d "$HOME/Applications/Insomnia.app" ] && ! git -C "$repo" diff --quiet "$old" HEAD -- menubar; then
+    echo "Rebuilding the menu bar app..."
+    "$repo/menubar/build.sh" || { echo "The app didn't build. The command is updated; run $repo/menubar/build.sh to see why." >&2; return 1; }
+  fi
+  if running_pid >/dev/null; then
+    echo "The session that's on keeps running as it was; the update applies from the next start."
+  fi
+}
+
 cmd_install_nopasswd() {
   local user tmp
   user="${SUDO_USER:-$USER}"
@@ -801,6 +856,7 @@ case "${1:-}" in
   heal) cmd_heal ;;
   heal-agent) cmd_heal_agent "${2:-status}" ;;
   allow-schedules) cmd_allow_schedules ;;
+  update) cmd_update "${2:-}" ;;
   -h|--help|help|"") usage ;;
   *) echo "Unknown command: $1" >&2; usage; exit 2 ;;
 esac; exit

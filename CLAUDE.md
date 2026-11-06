@@ -25,6 +25,7 @@ When the user asks you to set up, install, or use Insomnia, follow this plan.
 - Start: `insomnia on` (options: `--hours N`, `--low-power`, `--max-temp C`, `--min-battery P`).
 - With phone access: `insomnia on --remote <folder>`. Pick the folder the user wants to work in from the phone, or `--remote all` when they want every recent folder (and all their chats) reachable from the phone; `insomnia recent-dirs` lists folders of recent Claude Code sessions. Phone access needs the `claude` CLI signed in with a claude.ai plan.
 - Stop: `insomnia off`. Phone access keeps running so phone chats stay connected; `insomnia off --all` or `insomnia remote-off` stops it.
+- Update: `insomnia update` pulls the latest version into the cloned folder and rebuilds the menu bar app if its code changed (`--check` only reports). If it says the folder has local changes, ask the user before stashing them.
 - Check: `insomnia status` (human) or `insomnia state` (key=value). Report plainly: running or not, sleep disabled or not, lid, battery %, battery temperature, thermal pressure, phone access.
 
 ## 4. Safety answers

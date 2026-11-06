@@ -59,6 +59,15 @@ This adds `/etc/sudoers.d/insomnia`, validated with `visudo`, that allows **only
 
 The heal agent is a per-user LaunchAgent (`~/Library/LaunchAgents/com.oddproblems.insomnia.heal.plist`). Manage it with `insomnia heal-agent install|uninstall|status`. It treats any `disablesleep 1` without a running Insomnia watchdog as left over, so if you also set that by hand, uninstall the agent.
 
+### Update
+
+```bash
+insomnia update           # get the latest version and rebuild the menu bar app if it changed
+insomnia update --check   # only say whether an update is waiting
+```
+
+It pulls the latest version into the folder you cloned and rebuilds the menu bar app when the app's code changed. If Insomnia is on, the running session keeps going as it was, and the update takes effect the next time you turn it on. If you installed before `update` existed, update once by hand: `cd ~/insomnia && git pull && ./install.sh`.
+
 ### Uninstall
 
 ```bash

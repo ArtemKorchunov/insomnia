@@ -19,6 +19,7 @@ insomnia off --all                            # also stop phone access
 insomnia remote-on <folder> / insomnia remote-off
 insomnia recent-dirs                          # folders of recent Claude Code sessions
 insomnia nopasswd-status                      # exit 0 when no-password switching is installed
+insomnia update [--check]                     # latest version from GitHub, rebuilds the app if it changed
 ```
 
 ## Running it for the user
