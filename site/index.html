@@ -6,42 +6,39 @@
 <title>Insomnia for Mac</title>
 <meta name="description" content="Keep your MacBook working with the lid closed, reach Claude Code from your phone, and let a watchdog put it to sleep when it gets hot, low or late.">
 <link rel="icon" href="img/app-icon.png">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 :root{
-  --night-0:#070821;
-  --night-1:#11143d;
-  --dusk:#3a2a7a;
-  --violet:#6b66f2;      /* the app's nightAccent */
-  --violet-soft:#a9a6ff;
+  --night-0:#0a0a0c;
+  --night-1:#1c1c21;
+  --dusk:#2c2c33;
+  --violet:#6b66f2;      /* the app's nightAccent, only inside the panel */
+  --app-soft:#a9a6ff;
+  --silver:#d6d6de;
   --spark:#e8876a;       /* the iris: the Claude spark */
   --moon:#f4ecd6;
   --ink:#f3f3fb;
-  --ink-2:rgba(236,236,250,.72);
-  --ink-3:rgba(236,236,250,.5);
+  --ink-2:rgba(240,240,245,.72);
+  --ink-3:rgba(240,240,245,.48);
   --line:rgba(255,255,255,.14);
   --ok:#5fd39a;
   --sys:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Helvetica,Arial,sans-serif;
-  --display:"Bricolage Grotesque",var(--sys);
-  --mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+  --display:-apple-system,BlinkMacSystemFont,"SF Pro Display","Helvetica Neue",Helvetica,Arial,sans-serif;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,monospace;
 }
 *{box-sizing:border-box}
 html{scroll-behavior:smooth}
 @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*::before,*::after{animation:none!important;transition:none!important}}
 body{margin:0;background:var(--night-0);color:var(--ink);font:16px/1.55 var(--sys);-webkit-font-smoothing:antialiased;overflow-x:hidden}
 a{color:inherit}
-:focus-visible{outline:2px solid var(--violet-soft);outline-offset:3px;border-radius:6px}
+:focus-visible{outline:2px solid var(--silver);outline-offset:3px;border-radius:6px}
 .wrap{max-width:1120px;margin:0 auto;padding:0 24px}
 @media (max-width:600px){.wrap{padding:0 16px}}
 
 /* ---------- the night sky behind everything ---------- */
 .sky{position:fixed;inset:0;z-index:-1;pointer-events:none;
   background:
-    radial-gradient(1200px 700px at 78% -10%, rgba(107,102,242,.35), transparent 60%),
-    radial-gradient(900px 600px at 10% 20%, rgba(58,42,122,.55), transparent 65%),
-    linear-gradient(180deg,var(--night-1) 0%,var(--night-0) 55%,#05061a 100%)}
+    radial-gradient(1100px 620px at 50% -12%, rgba(255,255,255,.10), transparent 62%),
+    linear-gradient(180deg,var(--night-1) 0%,var(--night-0) 50%,#050506 100%)}
 .sky canvas{position:absolute;inset:0;width:100%;height:100%}
 
 /* ---------- liquid glass ---------- */
@@ -54,10 +51,10 @@ a{color:inherit}
     inset 0 -1px 0 rgba(255,255,255,.08),
     inset 0 0 0 1px rgba(255,255,255,.10),
     0 1px 2px rgba(0,0,0,.25),
-    0 30px 80px -20px rgba(3,4,25,.75)}
+    0 30px 80px -20px rgba(0,0,0,.75)}
 /* specular rim: brighter on the top-left, like light catching a lens */
 .glass::before{content:"";position:absolute;inset:0;border-radius:inherit;padding:1px;pointer-events:none;
-  background:linear-gradient(135deg,rgba(255,255,255,.7),rgba(255,255,255,.08) 30%,rgba(255,255,255,0) 55%,rgba(169,166,255,.35));
+  background:linear-gradient(135deg,rgba(255,255,255,.7),rgba(255,255,255,.08) 30%,rgba(255,255,255,0) 55%,rgba(255,255,255,.22));
   -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude}
 /* soft sheen that follows the pointer (set by JS) */
 .glass::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;z-index:-1;
@@ -78,20 +75,20 @@ nav .links a:hover{color:var(--ink);background:rgba(255,255,255,.08)}
 .btn{display:inline-flex;align-items:center;gap:10px;border:0;cursor:pointer;font:600 15px/1 var(--sys);text-decoration:none;
   padding:14px 20px;border-radius:999px;color:#fff;transition:transform .15s ease,box-shadow .2s ease}
 .btn:active{transform:scale(.98)}
-.btn-primary{background:linear-gradient(180deg,#8a86ff,#5f59ea);box-shadow:inset 0 1px 0 rgba(255,255,255,.5),0 10px 30px -8px rgba(107,102,242,.8)}
-.btn-primary:hover{box-shadow:inset 0 1px 0 rgba(255,255,255,.5),0 14px 40px -8px rgba(107,102,242,1)}
+.btn-primary{background:#f5f5f7;color:#0a0a0c;box-shadow:inset 0 1px 0 #fff,0 8px 24px -10px rgba(255,255,255,.35)}
+.btn-primary:hover{background:#fff;box-shadow:inset 0 1px 0 #fff,0 10px 30px -8px rgba(255,255,255,.5)}
 .btn-glass{background:rgba(255,255,255,.08);box-shadow:inset 0 0 0 1px rgba(255,255,255,.18),inset 0 1px 0 rgba(255,255,255,.3)}
 .btn-glass:hover{background:rgba(255,255,255,.13)}
 .btn svg{width:18px;height:18px}
 
 /* ---------- hero ---------- */
 .hero{text-align:center;padding:56px 0 8px}
-.hero h1{font:800 clamp(42px,6.4vw,80px)/.98 var(--display);letter-spacing:-.035em;margin:0 auto;max-width:none;
-  background:linear-gradient(180deg,#fff 30%,#c9c7ff);-webkit-background-clip:text;background-clip:text;color:transparent}
+.hero h1{font:700 clamp(42px,6.4vw,80px)/1.02 var(--display);letter-spacing:-.03em;margin:0 auto;max-width:none;
+  background:linear-gradient(180deg,#fff 40%,#a8a8b2);-webkit-background-clip:text;background-clip:text;color:transparent}
 .hero p.lede{font-size:clamp(17px,1.8vw,19px);color:var(--ink-2);max-width:56ch;margin:18px auto 0}
 .hero .ctas{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:32px}
 .cmd{display:flex;align-items:center;gap:12px;max-width:720px;margin:26px auto 0;padding:8px 8px 8px 20px;border-radius:999px;text-align:left}
-.cmd .p{font:500 15px var(--mono);color:var(--violet-soft);flex:none}
+.cmd .p{font:500 15px var(--mono);color:var(--silver);flex:none}
 .cmd code{flex:1;min-width:0;font:14px/1.4 var(--mono);color:var(--ink);white-space:nowrap;overflow-x:auto;scrollbar-width:none}
 .cmd code::-webkit-scrollbar{display:none}
 .cmd .btn{flex:none;padding:12px 22px}
@@ -103,15 +100,15 @@ nav .links a:hover{color:var(--ink);background:rgba(255,255,255,.08)}
 .stage{position:relative;margin:32px auto 0;max-width:1040px;border-radius:28px;overflow:hidden;overflow:clip;height:660px;
   background:
     radial-gradient(260px 260px at 82% 22%, rgba(244,236,214,.55), rgba(244,236,214,.12) 40%, transparent 70%),
-    radial-gradient(700px 420px at 20% 110%, rgba(232,135,106,.35), transparent 70%),
-    linear-gradient(170deg,#2b2370 0%,#1a1a52 45%,#0d0f33 100%);
+    radial-gradient(900px 380px at 30% 112%, rgba(232,135,106,.45), transparent 70%),
+    linear-gradient(170deg,#4a5878 0%,#232a3e 45%,#0e1018 100%);
   box-shadow:0 0 0 1px rgba(255,255,255,.12),0 60px 120px -30px rgba(0,0,0,.8)}
 .stage .moon{position:absolute;right:15%;top:15%;width:70px;height:70px;border-radius:50%;
   background:radial-gradient(circle at 35% 35%,#fffaf0,#efe3c2 60%,#d8c99f);box-shadow:0 0 60px 20px rgba(244,236,214,.35)}
 .stage .hills{position:absolute;left:0;right:0;bottom:0;height:38%;
-  background:radial-gradient(120% 100% at 30% 100%,#0a0b26 55%,transparent 56%),radial-gradient(90% 80% at 85% 100%,#14143c 55%,transparent 56%)}
+  background:radial-gradient(120% 100% at 30% 100%,#0b0c10 55%,transparent 56%),radial-gradient(90% 80% at 85% 100%,#161820 55%,transparent 56%)}
 .menubar{position:absolute;top:0;left:0;right:0;height:30px;display:flex;align-items:center;gap:18px;padding:0 14px;font-size:13px;
-  background:rgba(20,20,50,.35);-webkit-backdrop-filter:blur(20px) saturate(160%);backdrop-filter:blur(20px) saturate(160%);
+  background:rgba(20,22,30,.35);-webkit-backdrop-filter:blur(20px) saturate(160%);backdrop-filter:blur(20px) saturate(160%);
   box-shadow:inset 0 -1px 0 rgba(255,255,255,.08);z-index:3}
 .menubar .apple{width:14px;height:14px;opacity:.95}
 .menubar b{font-weight:700}
@@ -128,15 +125,15 @@ nav .links a:hover{color:var(--ink);background:rgba(255,255,255,.08)}
   color:#f5f5fa;transform-origin:top center;transition:opacity .18s ease,transform .22s cubic-bezier(.2,.9,.3,1.2)}
 .panel.closed{opacity:0;transform:scale(.96) translateY(-6px);pointer-events:none}
 .panel .arrow{position:absolute;top:-7px;width:14px;height:14px;transform:rotate(45deg);border-radius:3px 0 0 0;
-  background:rgba(70,66,140,.65);-webkit-backdrop-filter:blur(26px);backdrop-filter:blur(26px);box-shadow:inset 1px 1px 0 rgba(255,255,255,.4)}
+  background:rgba(86,86,98,.6);-webkit-backdrop-filter:blur(26px);backdrop-filter:blur(26px);box-shadow:inset 1px 1px 0 rgba(255,255,255,.4)}
 .p-hero{display:flex;align-items:center;gap:14px}
 .ring{position:relative;width:58px;height:58px;flex:none}
 .ring svg{width:58px;height:58px;transform:rotate(-90deg)}
 .ring circle{fill:none;stroke-width:5}
 .ring .track{stroke:rgba(255,255,255,.16)}
-.ring .prog{stroke:var(--violet-soft);stroke-linecap:round;transition:stroke-dashoffset .6s ease}
+.ring .prog{stroke:var(--app-soft);stroke-linecap:round;transition:stroke-dashoffset .6s ease}
 .ring i{position:absolute;inset:16px;background:var(--ink-3);-webkit-mask:var(--icon) center/contain no-repeat;mask:var(--icon) center/contain no-repeat;transition:background .3s}
-.on .ring i{background:var(--violet-soft)}
+.on .ring i{background:var(--app-soft)}
 .p-title{font:600 22px/1.1 ui-rounded,"SF Pro Rounded",var(--sys);font-variant-numeric:tabular-nums}
 .p-sub{color:var(--ink-2);margin-top:3px;font-size:13px}
 .p-hero .grow{flex:1;min-width:0}
@@ -156,13 +153,13 @@ nav .links a:hover{color:var(--ink);background:rgba(255,255,255,.08)}
 .caption{color:var(--ink-3);font-size:11.5px;margin-top:5px}
 .p-item{display:flex;gap:10px;align-items:flex-start}
 .p-item svg{width:18px;height:18px;flex:none;margin-top:1px;color:var(--ink-3)}
-.p-item.phone-row.lit svg{color:var(--violet-soft)}
+.p-item.phone-row.lit svg{color:var(--app-soft)}
 .p-item .grow{flex:1}
 .p-item .cap{color:var(--ink-3);font-size:11.5px;margin-top:2px}
 .menu-btn{position:relative}
 .menu-btn>button{min-width:78px}
 .dropdown{position:absolute;right:0;top:30px;width:220px;padding:5px;border-radius:10px;z-index:9;font-size:13px;display:none;
-  background:rgba(34,32,78,.94);-webkit-backdrop-filter:blur(30px) saturate(180%);backdrop-filter:blur(30px) saturate(180%);
+  background:rgba(40,40,46,.95);-webkit-backdrop-filter:blur(30px) saturate(180%);backdrop-filter:blur(30px) saturate(180%);
   box-shadow:inset 0 0 0 1px rgba(255,255,255,.16),0 18px 40px rgba(0,0,0,.5)}
 .dropdown.show{display:block}
 .dropdown .h{color:var(--ink-3);font-size:11px;font-weight:600;padding:6px 9px 3px}
@@ -184,21 +181,21 @@ nav .links a:hover{color:var(--ink);background:rgba(255,255,255,.08)}
 .handset{position:absolute;left:7%;bottom:-16px;width:236px;height:470px;border-radius:44px;padding:10px;z-index:3;
   transition:transform .6s cubic-bezier(.2,.9,.25,1),opacity .4s;transform:translateY(40px) rotate(-6deg);opacity:0}
 .phone-on .handset{transform:translateY(0) rotate(-6deg);opacity:1}
-.handset .screen{height:100%;border-radius:36px;overflow:hidden;background:linear-gradient(180deg,#17183f,#0e0f2b);padding:40px 14px 14px;display:flex;flex-direction:column;gap:9px;position:relative}
+.handset .screen{height:100%;border-radius:36px;overflow:hidden;background:linear-gradient(180deg,#1c1c22,#0e0e12);padding:40px 14px 14px;display:flex;flex-direction:column;gap:9px;position:relative}
 .handset .notch{position:absolute;top:10px;left:50%;width:84px;height:24px;margin-left:-42px;border-radius:20px;background:#000}
 .handset .ttl{font:600 13px var(--sys);display:flex;align-items:center;gap:6px}
 .handset .ttl .dot{width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 8px var(--ok)}
 .handset .meta{font-size:11px;color:var(--ink-3);margin-top:-6px}
 .bub{font-size:12px;line-height:1.35;padding:8px 10px;border-radius:14px;max-width:92%;opacity:0;transform:translateY(6px);transition:all .35s}
 .bub.show{opacity:1;transform:none}
-.bub.me{align-self:flex-end;background:var(--violet);border-bottom-right-radius:4px}
+.bub.me{align-self:flex-end;background:#3a3a42;border-bottom-right-radius:4px}
 .bub.ai{background:rgba(255,255,255,.1);border-bottom-left-radius:4px}
-.bub.ai code{font:11px var(--mono);color:var(--violet-soft)}
+.bub.ai code{font:11px var(--mono);color:var(--silver)}
 .bub.tool{font:10.5px/1.4 var(--mono);background:rgba(0,0,0,.3);color:var(--ink-2);border-radius:8px}
 .bub.tool b{color:var(--ok);font-weight:500}
 
 /* the lid: closes over the stage when the user tries it */
-.lid{position:absolute;inset:0;z-index:6;pointer-events:none;background:linear-gradient(180deg,#0b0c22,#05060f);transform-origin:bottom;transform:perspective(1400px) rotateX(-92deg);opacity:0;transition:transform .9s cubic-bezier(.6,.05,.3,1),opacity .2s;
+.lid{position:absolute;inset:0;z-index:6;pointer-events:none;background:linear-gradient(180deg,#141418,#060607);transform-origin:bottom;transform:perspective(1400px) rotateX(-92deg);opacity:0;transition:transform .9s cubic-bezier(.6,.05,.3,1),opacity .2s;
   display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px;color:var(--ink-2);font-size:14px}
 .lid.shut{transform:perspective(1400px) rotateX(0);opacity:1;pointer-events:auto}
 .lid-shut .handset{z-index:7}
@@ -218,8 +215,8 @@ nav .links a:hover{color:var(--ink);background:rgba(255,255,255,.08)}
 
 /* ---------- sections ---------- */
 section{padding:120px 0 0}
-.kicker{color:var(--violet-soft);font-weight:600;font-size:15px;margin:0 0 10px}
-h2{font:800 clamp(34px,5vw,60px)/1 var(--display);letter-spacing:-.03em;margin:0;max-width:16ch}
+.kicker{color:var(--spark);font-weight:600;font-size:15px;margin:0 0 10px}
+h2{font:700 clamp(34px,5vw,60px)/1.04 var(--display);letter-spacing:-.025em;margin:0;max-width:16ch}
 .sub{color:var(--ink-2);font-size:18px;max-width:52ch;margin:18px 0 0}
 
 
@@ -228,7 +225,7 @@ h2{font:800 clamp(34px,5vw,60px)/1 var(--display);letter-spacing:-.03em;margin:0
 @media (max-width:900px){.vs{grid-template-columns:1fr}}
 .alt{padding:22px 24px;border-radius:22px}
 .alt h3{font:700 19px/1.2 var(--display);margin:0 0 4px}
-.alt h3 code{font:600 15px var(--mono);color:var(--violet-soft)}
+.alt h3 code{font:600 15px var(--mono);color:var(--silver)}
 .alt .works{color:var(--ink-2);font-size:15px;margin:0}
 .alt .breaks{margin:14px 0 0;padding-top:14px;border-top:1px solid var(--line);font-size:15px;color:var(--ink);display:flex;gap:10px}
 .alt .breaks::before{content:"";flex:none;width:8px;height:8px;margin-top:8px;border-radius:50%;background:var(--spark);box-shadow:0 0 10px var(--spark)}
@@ -247,7 +244,7 @@ h2{font:800 clamp(34px,5vw,60px)/1 var(--display);letter-spacing:-.03em;margin:0
 .moment p{color:var(--ink-2);margin:0;font-size:15px}
 .moment .chip{margin-top:auto;padding-top:18px}
 .chip span{display:inline-flex;align-items:center;gap:7px;font:500 12px var(--mono);padding:6px 10px;border-radius:999px;background:rgba(0,0,0,.28);box-shadow:inset 0 0 0 1px rgba(255,255,255,.1);color:var(--ink-2)}
-.chip span::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--c,var(--violet-soft))}
+.chip span::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--c,var(--silver))}
 
 /* a real evening, from the log */
 .real{display:grid;grid-template-columns:.8fr 1.2fr;gap:28px;align-items:center;margin-top:28px}
@@ -259,7 +256,7 @@ h2{font:800 clamp(34px,5vw,60px)/1 var(--display);letter-spacing:-.03em;margin:0
 .facts dd{margin:2px 0 0;font:700 22px/1.1 var(--display)}
 .real pre{font-size:12px;line-height:1.9;white-space:pre}
 .real pre b{font-weight:500}
-.real pre .on{color:var(--violet-soft)}
+.real pre .on{color:var(--spark)}
 .real pre .lidc{color:var(--ok)}
 
 /* safety */
@@ -272,14 +269,14 @@ h2{font:800 clamp(34px,5vw,60px)/1 var(--display);letter-spacing:-.03em;margin:0
 .gauge .lim{font:700 22px/1 var(--display);text-align:right}
 .gauge .why{grid-column:1/-1;color:var(--ink-3);font-size:14px}
 .gauge .meter{grid-column:1/-1;height:6px;border-radius:9px;background:rgba(255,255,255,.08);overflow:hidden;margin-top:6px}
-.gauge .meter b{display:block;height:100%;border-radius:9px;background:linear-gradient(90deg,var(--violet),var(--violet-soft));width:var(--v)}
+.gauge .meter b{display:block;height:100%;border-radius:9px;background:linear-gradient(90deg,#76767f,#e8e8ee);width:var(--v)}
 .gauge .meter b.warm{background:linear-gradient(90deg,#c7718f,var(--spark))}
 .promises{display:grid;gap:14px}
 .promise{padding:22px 24px;border-radius:22px}
 .promise h3{font:700 19px/1.2 var(--display);margin:0 0 6px}
 .promise p{margin:0;color:var(--ink-2);font-size:15px}
-.promise a{color:var(--violet-soft)}
-.promise code,.faq code{font:13px var(--mono);color:var(--violet-soft)}
+.promise a{color:var(--silver)}
+.promise code,.faq code{font:13px var(--mono);color:var(--silver)}
 
 /* install */
 .install{display:grid;grid-template-columns:1fr 1.2fr;gap:28px;align-items:center;margin-top:48px}
@@ -291,11 +288,11 @@ h2{font:800 clamp(34px,5vw,60px)/1 var(--display);letter-spacing:-.03em;margin:0
 .term .top span{margin-left:auto;font-size:12px;color:var(--ink-3)}
 .term pre{margin:0;padding:18px 20px;font:13.5px/1.75 var(--mono);color:var(--ink);overflow-x:auto}
 .term pre .c{color:var(--ink-3)}
-.term pre .p{color:var(--violet-soft);user-select:none}
+.term pre .p{color:var(--silver);user-select:none}
 .term .copy{margin:0 20px 18px}
 .reqs{list-style:none;padding:0;margin:22px 0 0;display:grid;gap:10px;color:var(--ink-2)}
 .reqs li{display:flex;gap:10px}
-.reqs li::before{content:"";flex:none;width:6px;height:6px;margin-top:9px;border-radius:50%;background:var(--violet-soft)}
+.reqs li::before{content:"";flex:none;width:6px;height:6px;margin-top:9px;border-radius:50%;background:var(--silver)}
 
 /* faq */
 .faq{margin-top:40px;max-width:760px}
@@ -309,7 +306,7 @@ h2{font:800 clamp(34px,5vw,60px)/1 var(--display);letter-spacing:-.03em;margin:0
 
 /* final */
 .final{text-align:center;padding:140px 0 60px}
-.final img{width:96px;height:96px;filter:drop-shadow(0 20px 40px rgba(107,102,242,.6))}
+.final img{width:96px;height:96px;filter:drop-shadow(0 24px 40px rgba(0,0,0,.7))}
 .final h2{margin:24px auto 0;max-width:14ch}
 .final .ctas{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:30px}
 footer{color:var(--ink-3);font-size:13px;padding:40px 0 50px;display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap;border-top:1px solid var(--line)}
@@ -539,7 +536,7 @@ footer a{color:var(--ink-2)}
     <h2>Three lines in Terminal.</h2>
     <div class="install">
       <div>
-        <p class="sub" style="margin-top:0">It installs the <code style="font:15px var(--mono);color:var(--violet-soft)">insomnia</code> command and builds the menu bar app into your Applications folder. Updates come from GitHub with one click in the panel, or automatically.</p>
+        <p class="sub" style="margin-top:0">It installs the <code style="font:15px var(--mono);color:var(--silver)">insomnia</code> command and builds the menu bar app into your Applications folder. Updates come from GitHub with one click in the panel, or automatically.</p>
         <ul class="reqs">
           <li>macOS 13 or newer on a MacBook, tested on Apple Silicon</li>
           <li>Xcode Command Line Tools for the menu bar app</li>
@@ -760,7 +757,7 @@ footer a{color:var(--ink-2)}
     stars = Array.from({length: Math.round(innerWidth*innerHeight/9000)}, () => ({x:Math.random()*cv.width, y:Math.random()*cv.height*.8, r:Math.random()*1.3*devicePixelRatio+.3, p:Math.random()*6.28})); }
   const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
   function draw(t){ cx.clearRect(0,0,cv.width,cv.height);
-    for (const s of stars){ cx.globalAlpha = .35 + .45*Math.sin(s.p + t/1400); cx.fillStyle='#fff'; cx.beginPath(); cx.arc(s.x,s.y,s.r,0,6.28); cx.fill(); }
+    for (const s of stars){ cx.globalAlpha = .18 + .22*Math.sin(s.p + t/1400); cx.fillStyle='#fff'; cx.beginPath(); cx.arc(s.x,s.y,s.r,0,6.28); cx.fill(); }
     if (!still) requestAnimationFrame(draw); }
   size(); addEventListener('resize', () => { size(); placeArrow(); if (still) draw(0); }); requestAnimationFrame(draw);
 

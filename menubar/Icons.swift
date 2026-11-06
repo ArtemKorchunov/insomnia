@@ -166,7 +166,7 @@ func menuIcon(_ kind: MenuIconKind) -> NSImage {
     return image
 }
 
-// MARK: - App icon: a glass eye on a midnight squircle, the Claude spark as its iris.
+// MARK: - App icon: a glass eye on a graphite squircle, the Claude spark as its iris.
 
 private func iconColor(_ r: CGFloat, _ g: CGFloat, _ b: CGFloat, _ a: CGFloat = 1) -> NSColor {
     NSColor(calibratedRed: r / 255, green: g / 255, blue: b / 255, alpha: a)
@@ -248,7 +248,7 @@ func drawAppIcon(size: CGFloat) {
 
     NSGraphicsContext.saveGraphicsState()
     tile.addClip()
-    NSGradient(colors: [iconColor(104, 88, 196), iconColor(46, 42, 124), iconColor(20, 19, 62), iconColor(30, 22, 66)],
+    NSGradient(colors: [iconColor(92, 94, 108), iconColor(44, 45, 56), iconColor(18, 18, 24), iconColor(10, 10, 14)],
                atLocations: [0, 0.42, 0.78, 1], colorSpace: .deviceRGB)!.draw(in: rect, angle: -90)
     iconColor(255, 255, 255, 0.9).setFill(); NSBezierPath(ovalIn: NSRect(x: 268 * s, y: 790 * s, width: 13 * s, height: 13 * s)).fill()
     iconColor(255, 255, 255, 0.65).setFill(); NSBezierPath(ovalIn: NSRect(x: 752 * s, y: 836 * s, width: 9 * s, height: 9 * s)).fill()
@@ -269,15 +269,15 @@ func drawAppIcon(size: CGFloat) {
     NSGraphicsContext.saveGraphicsState()
     let es = NSShadow(); es.shadowColor = iconColor(4, 4, 24, 0.55)
     es.shadowBlurRadius = 8 * s; es.shadowOffset = NSSize(width: 0, height: -10 * s); es.set()
-    iconColor(20, 16, 54).setFill(); lid.fill(); eye.fill()
+    iconColor(12, 12, 16).setFill(); lid.fill(); eye.fill()
     NSGraphicsContext.restoreGraphicsState()
 
     // the white of the eye, shaded a little under the upper lid
     NSGraphicsContext.saveGraphicsState()
     eye.addClip()
-    NSGradient(colors: [iconColor(255, 255, 255), iconColor(240, 238, 255), iconColor(216, 212, 250)],
+    NSGradient(colors: [iconColor(255, 255, 255), iconColor(242, 242, 246), iconColor(218, 218, 226)],
                atLocations: [0, 0.55, 1], colorSpace: .deviceRGB)!.draw(in: eb, angle: -90)
-    NSGradient(colors: [iconColor(150, 140, 230, 0.55), iconColor(150, 140, 230, 0)])!
+    NSGradient(colors: [iconColor(120, 120, 140, 0.45), iconColor(120, 120, 140, 0)])!
         .draw(in: NSRect(x: eb.minX, y: eb.maxY - eb.height * 0.32, width: eb.width, height: eb.height * 0.32), angle: -90)
 
     // the iris disc
@@ -285,11 +285,11 @@ func drawAppIcon(size: CGFloat) {
     let iris = NSRect(x: c.x - r, y: c.y - r, width: 2 * r, height: 2 * r)
     NSGraphicsContext.saveGraphicsState()
     NSBezierPath(ovalIn: iris).addClip()
-    NSGradient(colors: [iconColor(92, 84, 200), iconColor(52, 42, 140), iconColor(30, 22, 84)], atLocations: [0, 0.6, 1], colorSpace: .deviceRGB)!
+    NSGradient(colors: [iconColor(80, 84, 104), iconColor(40, 42, 56), iconColor(20, 20, 28)], atLocations: [0, 0.6, 1], colorSpace: .deviceRGB)!
         .draw(fromCenter: NSPoint(x: c.x, y: c.y + r * 0.25), radius: 0, toCenter: c, radius: r, options: [])
     NSGraphicsContext.restoreGraphicsState()
     let ring = NSBezierPath(ovalIn: iris.insetBy(dx: 0.12 * k, dy: 0.12 * k))
-    ring.lineWidth = 0.24 * k; iconColor(22, 16, 64).setStroke(); ring.stroke()
+    ring.lineWidth = 0.24 * k; iconColor(6, 6, 8).setStroke(); ring.stroke()
 
     // a sharp-edged reflection across the white, kept off the iris
     let shine = NSBezierPath(ovalIn: NSRect(x: eb.minX - eb.width * 0.05, y: eb.midY + eb.height * 0.02, width: eb.width * 1.1, height: eb.height * 1.3))
@@ -314,10 +314,10 @@ func drawAppIcon(size: CGFloat) {
     // the lids, with one crisp gloss line inside the upper lid
     NSGraphicsContext.saveGraphicsState()
     lid.addClip()
-    iconColor(22, 17, 58).setFill(); lid.fill()
+    iconColor(14, 14, 20).setFill(); lid.fill()
     let gloss = up.copy() as! NSBezierPath
     let nudge = NSAffineTransform(); nudge.translateX(by: 0, yBy: upperLid * k * 0.12); gloss.transform(using: nudge as AffineTransform)
-    iconColor(160, 150, 255, 0.45).setFill(); strokedOutline(gloss, width: upperLid * k * 0.14).fill()
+    iconColor(200, 200, 215, 0.35).setFill(); strokedOutline(gloss, width: upperLid * k * 0.14).fill()
     NSGraphicsContext.restoreGraphicsState()
 
     // lashes: glass pills curving out from the upper lid
@@ -334,10 +334,10 @@ func drawAppIcon(size: CGFloat) {
         NSGraphicsContext.saveGraphicsState()
         let ps = NSShadow(); ps.shadowColor = iconColor(4, 4, 24, 0.4)
         ps.shadowBlurRadius = 2.5 * s; ps.shadowOffset = NSSize(width: 0, height: -4 * s); ps.set()
-        iconColor(236, 234, 255).setFill(); pill.fill()
+        iconColor(214, 214, 224).setFill(); pill.fill()
         NSGraphicsContext.restoreGraphicsState()
         NSGraphicsContext.saveGraphicsState(); pill.addClip()
-        NSGradient(colors: [iconColor(255, 255, 255), iconColor(206, 200, 250)])!.draw(in: pill.bounds, angle: -90)
+        NSGradient(colors: [iconColor(255, 255, 255), iconColor(214, 214, 224)])!.draw(in: pill.bounds, angle: -90)
         NSGraphicsContext.restoreGraphicsState()
     }
     NSGraphicsContext.restoreGraphicsState()
