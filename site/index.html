@@ -239,7 +239,7 @@ h2{font:800 clamp(34px,5vw,60px)/1 var(--display);letter-spacing:-.03em;margin:0
 /* the evening, in time order */
 .timeline{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:48px}
 @media (max-width:960px){.timeline{grid-template-columns:1fr 1fr}}
-@media (max-width:560px){.timeline{grid-template-columns:1fr}.moment{min-height:0}}
+@media (max-width:560px){.timeline{grid-template-columns:1fr}}
 .moment{padding:22px;border-radius:22px;min-height:300px;display:flex;flex-direction:column}
 .moment time{font:700 34px/1 var(--display);letter-spacing:-.02em;font-variant-numeric:tabular-nums}
 .moment time small{font:500 13px var(--sys);color:var(--ink-3);margin-left:6px;letter-spacing:0}
@@ -248,6 +248,19 @@ h2{font:800 clamp(34px,5vw,60px)/1 var(--display);letter-spacing:-.03em;margin:0
 .moment .chip{margin-top:auto;padding-top:18px}
 .chip span{display:inline-flex;align-items:center;gap:7px;font:500 12px var(--mono);padding:6px 10px;border-radius:999px;background:rgba(0,0,0,.28);box-shadow:inset 0 0 0 1px rgba(255,255,255,.1);color:var(--ink-2)}
 .chip span::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--c,var(--violet-soft))}
+
+/* a real evening, from the log */
+.real{display:grid;grid-template-columns:.8fr 1.2fr;gap:28px;align-items:center;margin-top:28px}
+@media (max-width:900px){.real{grid-template-columns:1fr}}
+.real h3{font:700 26px/1.15 var(--display);letter-spacing:-.01em;margin:0 0 10px}
+.real p{color:var(--ink-2);margin:0}
+.facts{display:grid;grid-template-columns:1fr 1fr;gap:14px 20px;margin:22px 0 0}
+.facts dt{color:var(--ink-3);font-size:13px}
+.facts dd{margin:2px 0 0;font:700 22px/1.1 var(--display)}
+.real pre{font-size:12px;line-height:1.9;white-space:pre}
+.real pre b{font-weight:500}
+.real pre .on{color:var(--violet-soft)}
+.real pre .lidc{color:var(--ok)}
 
 /* safety */
 .safety{display:grid;grid-template-columns:1.1fr 1fr;gap:28px;align-items:start;margin-top:48px}
@@ -304,6 +317,7 @@ footer a{color:var(--ink-2)}
 
 .toast{position:fixed;left:50%;bottom:28px;transform:translate(-50%,20px);opacity:0;z-index:50;padding:12px 18px;border-radius:999px;font-size:14px;transition:all .3s}
 .toast.show{opacity:1;transform:translate(-50%,0)}
+@media (max-width:560px){.moment{min-height:0}.moment .chip{margin-top:0}}
 </style>
 </head>
 <body>
@@ -475,6 +489,28 @@ footer a{color:var(--ink-2)}
         <p>The time is up, so phone access stops and the Mac goes to sleep. You don't have to remember to switch it off.</p>
         <div class="chip"><span style="--c:var(--spark)">Time limit reached</span></div>
       </article>
+    </div>
+    <div class="real">
+      <div class="real-copy">
+        <h3>This page was built on a closed MacBook.</h3>
+        <p>These lines are from Insomnia's own log on the Mac that ran the Claude Code session writing this site, on 6 November 2026. The lid closed at 17:32 and the work kept going on battery.</p>
+        <dl class="facts">
+          <div><dt>Lid closed</dt><dd>2 h 46 min</dd></div>
+          <div><dt>Battery temp</dt><dd>30.3–30.7 °C</dd></div>
+          <div><dt>Thermal pressure</dt><dd>Nominal</dd></div>
+          <div><dt>Charge</dt><dd>93% → 51%</dd></div>
+        </dl>
+      </div>
+      <div class="term glass">
+        <div class="top"><i></i><i></i><i></i><span>/tmp/insomnia-watchdog.log</span></div>
+<pre>16:40:39 <b class="on">insomnia ON</b> (power=battery, battery=100%, temp=30.1°C, thermal=Nominal)
+16:41:05 time limit set: stops at 00:41
+17:21:45 heartbeat: lid=open power=battery battery=95% temp=30.3°C thermal=Nominal
+17:32:09 heartbeat: <b class="lidc">lid=closed</b> power=battery battery=93% temp=30.3°C thermal=Nominal
+18:34:34 heartbeat: <b class="lidc">lid=closed</b> power=battery battery=78% temp=30.7°C thermal=Nominal
+19:36:59 heartbeat: <b class="lidc">lid=closed</b> power=battery battery=62% temp=30.7°C thermal=Nominal
+20:18:35 heartbeat: <b class="lidc">lid=closed</b> power=battery battery=51% temp=30.6°C thermal=Nominal</pre>
+      </div>
     </div>
   </section>
 
