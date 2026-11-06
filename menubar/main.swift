@@ -103,7 +103,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject, UNUs
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Updating is a chore nobody asked for, so it happens on its own unless switched off.
-        defaults.register(defaults: ["autoUpdate": true])
+        defaults.register(defaults: ["autoUpdate": true, "worktree": true])
         if let id = Bundle.main.bundleIdentifier,
            NSRunningApplication.runningApplications(withBundleIdentifier: id).count > 1 {
             NSApp.terminate(nil)
@@ -466,7 +466,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject, UNUs
                 var args = ["on"]
                 if let dir {
                     args += ["--remote", dir]
-                    if worktree { args += ["--remote-spawn", "worktree"] }
+                    args += ["--remote-spawn", worktree ? "worktree" : "same-dir"]
                 }
                 if hours > 0 { args += ["--hours", String(hours)] }
                 if lowPower { args.append("--low-power") }
@@ -481,7 +481,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject, UNUs
             }
             if let dir {
                 var args = ["remote-on", dir]
-                if worktree { args += ["--remote-spawn", "worktree"] }
+                args += ["--remote-spawn", worktree ? "worktree" : "same-dir"]
                 let r = self.runScript(args)
                 if r.status != 0 { error = r.output }
             }
@@ -508,7 +508,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject, UNUs
     func phoneAccess(in dir: String) {
         if !isRunning { turnOn(dir: dir); return }
         var args = ["remote-on", dir]
-        if worktree { args += ["--remote-spawn", "worktree"] }
+        args += ["--remote-spawn", worktree ? "worktree" : "same-dir"]
         perform(args)
     }
 
@@ -639,7 +639,8 @@ struct PanelView: View {
             VStack(spacing: 8) {
                 switchRow(app.isRunning ? "Low Power Mode (from next start)" : "Low Power Mode while on",
                           Binding(get: { app.lowPower }, set: { app.lowPower = $0 }))
-                switchRow("Phone chats in separate worktrees", Binding(get: { app.worktree }, set: { app.worktree = $0 }))
+                switchRow("New phone chats start from origin/main", Binding(get: { app.worktree }, set: { app.worktree = $0 }))
+                    .help("Each new phone chat gets its own git worktree from origin's main branch. Off: chats run in the folder itself, on whatever branch it has checked out. Applies the next time phone access starts.")
                 switchRow("Time left in the menu bar", Binding(get: { app.showTimeInMenuBar }, set: { app.showTimeInMenuBar = $0 }))
                 switchRow("Lock screen when the lid closes", Binding(get: { app.lockOnLidClose }, set: { app.lockOnLidClose = $0 }))
                 switchRow("Open at login", Binding(get: { app.openAtLogin }, set: { app.setOpenAtLogin($0) }))

@@ -31,7 +31,7 @@ INSOMNIA_CONFIG="${INSOMNIA_CONFIG:-$HOME/.config/insomnia/config}"
 if [ -f "$INSOMNIA_CONFIG" ]; then
   while IFS='=' read -r key value; do
     case "$key" in
-      INSOMNIA_SCHEDULE_IGNORE|INSOMNIA_CLAUDE_BIN|INSOMNIA_REMOTE_MAX|INSOMNIA_REMOTE_MIN_BATTERY) ;;
+      INSOMNIA_SCHEDULE_IGNORE|INSOMNIA_CLAUDE_BIN|INSOMNIA_REMOTE_SPAWN|INSOMNIA_REMOTE_MAX|INSOMNIA_REMOTE_MIN_BATTERY) ;;
       *) continue ;;
     esac
     [ -n "${!key+set}" ] && continue
@@ -49,7 +49,7 @@ LOW_POWER=0
 FOREGROUND=0
 REMOTE_DIRS=""
 REMOTE_MAX="${INSOMNIA_REMOTE_MAX:-8}"
-REMOTE_SPAWN="same-dir"
+REMOTE_SPAWN="${INSOMNIA_REMOTE_SPAWN:-worktree}"
 REMOTE_MIN_BATTERY="${INSOMNIA_REMOTE_MIN_BATTERY:-20}"
 TRIP_LEVELS="Heavy|Trapping|Sleeping|Serious|Critical"
 
@@ -106,7 +106,10 @@ Options for "on":
                      new ones that run on this Mac. Repeat for more folders; "all"
                      uses the most recent Claude folders (up to INSOMNIA_REMOTE_MAX,
                      default 8; your home folder is skipped).
-  --remote-spawn M   Where phone-created sessions run: same-dir (default) or worktree.
+  --remote-spawn M   Where phone-created sessions run: worktree (default: each new chat in
+                     its own worktree from origin/main, i.e. origin's default branch) or
+                     same-dir (in the folder, on whatever branch it has checked out).
+                     Folders that aren't git repos always use same-dir.
 
 When a limit trips with the lid closed, the Mac is put to sleep immediately.
 EOF
@@ -270,8 +273,15 @@ start_remote() {
     if [ "$spawn" = worktree ] && ! git -C "$dir" rev-parse --git-dir >/dev/null 2>&1; then
       spawn=same-dir
     fi
+    # In worktree mode every new phone chat gets its own worktree, which Claude
+    # Code branches from origin/<default branch> (its worktree.baseRef "fresh"),
+    # not from whatever branch the folder has checked out. The idle chat
+    # Remote Control would otherwise open in the folder itself is skipped, since
+    # that one would sit on the current branch.
+    extra=()
+    [ "$spawn" = worktree ] && extra=(--no-create-session-in-dir)
     echo "$dir" > "$REMOTE_STATE_DIR/$key.dir"
-    ( cd "$dir" && trap '' HUP && exec "$bin" remote-control --name "$computer · $(basename "$dir")" --spawn "$spawn" ) </dev/null >"$REMOTE_STATE_DIR/$key.log" 2>&1 &
+    ( cd "$dir" && trap '' HUP && exec "$bin" remote-control --name "$computer · $(basename "$dir")" --spawn "$spawn" "${extra[@]}" ) </dev/null >"$REMOTE_STATE_DIR/$key.log" 2>&1 &
     echo $! > "$REMOTE_STATE_DIR/$key.pid"
     started="$started $key"
   done <<< "$dirs"
@@ -819,6 +829,7 @@ cmd_status() {
     echo "Remote Control:   not running"
   fi
   for f in "$FAILED_LOG_DIR"/*.log; do
+    [ "$(basename "$f")" = update.log ] && continue   # the menu bar app's update log
     [ -f "$f" ] && echo "Failed phone log: $f"
   done
   if schedule_rc_rule; then

@@ -12,7 +12,7 @@ The tool is the `insomnia` command (installed by the repo's `install.sh` into `~
 ```bash
 insomnia status                               # no admin rights needed
 insomnia on [--hours N] [--low-power] [--max-temp C] [--min-battery P]
-insomnia on --remote <folder> [--remote-spawn worktree]   # plus Claude Code sessions from the phone
+insomnia on --remote <folder> [--remote-spawn same-dir]   # plus Claude Code sessions from the phone
 insomnia on --remote all                                  # phone access in every recent Claude folder
 insomnia off                                  # normal sleep back; phone access keeps running
 insomnia off --all                            # also stop phone access
@@ -31,7 +31,7 @@ insomnia update [--check]                     # latest version from GitHub, rebu
 
 ## Phone access
 
-`--remote <folder>` starts `claude remote-control` (server mode) in that folder. From the Claude mobile app (Code tab) or claude.ai/code the user can continue sessions and create new ones that run on the Mac, up to 32 at once. `--remote all` does this in every recent Claude folder at once (up to 8, `INSOMNIA_REMOTE_MAX`; the home folder is skipped because Remote Control never saves trust there), one server per folder named `<Mac> · <folder>`, so the phone can open and start chats in any of them. `--remote` can also be repeated, and `insomnia remote-on DIR...|all` adds folders to a running setup. A folder whose server can't start (for example an untrusted folder) is reported and skipped. In worktree mode, folders that aren't git repos fall back to same-dir. Chats started in the Claude desktop app show on the phone through its own "Connect new sessions to Remote Control" setting. Phone chats live inside that process: turning Insomnia off leaves it running, and stopping it takes them offline until `insomnia remote-on <same folder>` reconnects them. Needs the `claude` CLI signed in with a claude.ai plan.
+`--remote <folder>` starts `claude remote-control` (server mode) in that folder. From the Claude mobile app (Code tab) or claude.ai/code the user can continue sessions and create new ones that run on the Mac, up to 32 at once. `--remote all` does this in every recent Claude folder at once (up to 8, `INSOMNIA_REMOTE_MAX`; the home folder is skipped because Remote Control never saves trust there), one server per folder named `<Mac> · <folder>`, so the phone can open and start chats in any of them. `--remote` can also be repeated, and `insomnia remote-on DIR...|all` adds folders to a running setup. A folder whose server can't start (for example an untrusted folder) is reported and skipped. New phone chats default to their own worktree from `origin/main` (origin's default branch); `--remote-spawn same-dir` keeps them in the folder on its current branch. Folders that aren't git repos always use same-dir. Chats started in the Claude desktop app show on the phone through its own "Connect new sessions to Remote Control" setting. Phone chats live inside that process: turning Insomnia off leaves it running, and stopping it takes them offline until `insomnia remote-on <same folder>` reconnects them. Needs the `claude` CLI signed in with a claude.ai plan.
 
 ## Safety
 
