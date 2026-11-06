@@ -66,7 +66,7 @@ insomnia update           # get the latest version and rebuild the menu bar app 
 insomnia update --check   # only say whether an update is waiting
 ```
 
-It pulls the latest version into the folder you cloned and rebuilds the menu bar app when the app's code changed. If Insomnia is on, the running session keeps going as it was, and the update takes effect the next time you turn it on. If you installed before `update` existed, update once by hand: `cd ~/insomnia && git pull && ./install.sh`.
+The menu bar app does this for you: it checks GitHub every few hours and installs a new version by itself while its panel is closed (switch off **Update automatically** in the panel to update only when you click **Update**). On the command line, `insomnia update` pulls the latest version into the folder you cloned and rebuilds the menu bar app when the app's code changed. If Insomnia is on, the running session keeps going as it was, and the update takes effect the next time you turn it on. If you installed before `update` existed, update once by hand: `cd ~/insomnia && git pull && ./install.sh`.
 
 ### Uninstall
 

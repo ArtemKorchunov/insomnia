@@ -102,6 +102,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject, UNUs
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Updating is a chore nobody asked for, so it happens on its own unless switched off.
+        defaults.register(defaults: ["autoUpdate": true])
         if let id = Bundle.main.bundleIdentifier,
            NSRunningApplication.runningApplications(withBundleIdentifier: id).count > 1 {
             NSApp.terminate(nil)
