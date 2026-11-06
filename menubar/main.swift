@@ -831,7 +831,7 @@ struct PanelView: View {
                         .font(.title2).foregroundStyle(nightAccent)
                     VStack(alignment: .leading, spacing: 3) {
                         Text(app.updating ? "Updating…" : "Update ready").font(.callout.weight(.semibold))
-                        Text("You have \(version("current")). Newest is \(version("latest")).")
+                        Text(versionStep)
                             .font(.caption).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                         ForEach(app.updateChanges.prefix(3), id: \.self) { change in
@@ -850,7 +850,7 @@ struct PanelView: View {
                 .padding(10)
                 .background(RoundedRectangle(cornerRadius: 10).fill(nightAccent.opacity(0.12)))
                 .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(nightAccent.opacity(0.35)))
-                .help(app.updateChanges.joined(separator: "\n"))
+                .help((["\(app.updateInfo["current"] ?? "?") → \(app.updateInfo["latest"] ?? "?")"] + app.updateChanges).joined(separator: "\n"))
             } else {
                 HStack(spacing: 4) {
                     Text(app.updateInfo["offline"] == "1"
@@ -864,14 +864,22 @@ struct PanelView: View {
         }
     }
 
-    /// "Nov 6 (3cac6c3)" from the date and commit the script reported.
-    func version(_ key: String) -> String {
+    /// A version as people say it: its date ("Nov 6"). The commit only shows when the
+    /// date alone can't tell two versions apart.
+    func version(_ key: String, withHash: Bool = false) -> String {
         let hash = app.updateInfo[key] ?? "?"
         let input = DateFormatter()
         input.dateFormat = "yyyy-MM-dd"
         input.locale = Locale(identifier: "en_US_POSIX")
         guard let raw = app.updateInfo[key + "_date"], let date = input.date(from: raw) else { return hash }
-        return "\(date.formatted(.dateTime.month(.abbreviated).day())) (\(hash))"
+        let day = date.formatted(.dateTime.month(.abbreviated).day())
+        return withHash ? "\(day) (\(hash))" : day
+    }
+
+    /// "Your version Nov 5 → new Nov 6".
+    var versionStep: String {
+        let sameDay = app.updateInfo["current_date"] == app.updateInfo["latest_date"]
+        return "Yours: \(version("current", withHash: sameDay)) → new: \(version("latest", withHash: sameDay))"
     }
 
     var footer: some View {
