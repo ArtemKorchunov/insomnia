@@ -71,7 +71,8 @@ Usage:
                           A login agent that runs "heal" at login and every minute.
   insomnia update [--check]  Get the latest Insomnia from GitHub (git pull in the
                           cloned folder) and rebuild the menu bar app if it changed.
-                          --check only says whether an update is waiting.
+                          --check only says whether an update is waiting
+                          (--state says it as key=value lines, for the app).
   insomnia allow-schedules  Allow Claude to turn Remote Control on for scheduled-task
                           runs (adds one rule to ~/.claude/settings.json), so the
                           phone can open them. "status" lists recent runs still off.
@@ -634,16 +635,46 @@ insomnia_repo() {
   (cd "$(dirname "$self")/.." && pwd)
 }
 
+# True when the folder is its own clone of Insomnia that tracks a remote branch,
+# not a copy that happens to sit inside some other git repo.
+is_insomnia_clone() {
+  local repo="$1" top
+  top=$(git -C "$repo" rev-parse --show-toplevel 2>/dev/null) || return 1
+  [ "$(cd "$top" && pwd -P)" = "$(cd "$repo" && pwd -P)" ] || return 1
+  [ -f "$repo/scripts/insomnia.sh" ] && [ -f "$repo/menubar/main.swift" ] || return 1
+  git -C "$repo" rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1
+}
+
+# key=value lines for the menu bar app. Fetches from GitHub, so it takes a moment.
+update_state() {
+  local repo
+  repo=$(insomnia_repo)
+  if ! is_insomnia_clone "$repo"; then
+    echo "managed=0"
+    return 0
+  fi
+  echo "managed=1"
+  git -C "$repo" log -1 --format='current=%h%ncurrent_date=%cd' --date=short HEAD
+  if ! git -C "$repo" fetch --quiet 2>/dev/null; then
+    echo "offline=1"
+    return 0
+  fi
+  git -C "$repo" log -1 --format='latest=%h%nlatest_date=%cd' --date=short '@{u}'
+  echo "behind=$(git -C "$repo" rev-list --count 'HEAD..@{u}')"
+  [ -z "$(git -C "$repo" status --porcelain --untracked-files=no)" ] || echo "local_changes=1"
+  git -C "$repo" log --format='change=%s' 'HEAD..@{u}' | head -n 8
+}
+
 cmd_update() {
   local check=0 repo old behind
   case "${1:-}" in
     --check) check=1 ;;
+    --state) update_state; return ;;
     "") ;;
     *) echo "Usage: insomnia update [--check]" >&2; return 2 ;;
   esac
   repo=$(insomnia_repo)
-  if ! git -C "$repo" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
-     || ! git -C "$repo" rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1; then
+  if ! is_insomnia_clone "$repo"; then
     echo "$repo isn't a git clone that tracks GitHub, so it can't update itself." >&2
     echo "Reinstall: git clone https://github.com/ArtemKorchunov/insomnia.git ~/insomnia && ~/insomnia/install.sh" >&2
     return 1

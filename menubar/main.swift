@@ -48,6 +48,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject, UNUs
     @Published var recentDirs: [String] = []
     @Published var busy = false
     @Published var now = Date()
+    /// What "insomnia update --state" said: versions, how far behind, and the new commits.
+    @Published var updateInfo: [String: String] = [:]
+    @Published var updateChanges: [String] = []
+    @Published var updating = false
+    var lastUpdateCheck = Date.distantPast
     var userPath = "/usr/bin:/bin:/usr/sbin:/sbin"
     let defaults = UserDefaults.standard
 
@@ -72,6 +77,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject, UNUs
     var lockOnLidClose: Bool {
         get { defaults.object(forKey: "lockOnLidClose") as? Bool ?? true }
         set { defaults.set(newValue, forKey: "lockOnLidClose"); objectWillChange.send() }
+    }
+    var autoUpdate: Bool {
+        get { defaults.bool(forKey: "autoUpdate") }
+        set {
+            defaults.set(newValue, forKey: "autoUpdate"); objectWillChange.send()
+            if newValue { checkForUpdate() }
+        }
     }
     var openAtLogin: Bool { SMAppService.mainApp.status == .enabled }
     var isRunning: Bool { state["running"] == "1" }
@@ -137,6 +149,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject, UNUs
             intentIdentifiers: [])])
         center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
         Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { _ in self.refresh() }
+        checkForUpdate()
+        Timer.scheduledTimer(withTimeInterval: 6 * 3600, repeats: true) { _ in self.checkForUpdate() }
         activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiatedAllowingIdleSystemSleep], reason: "Watch the lid to lock the screen")
         Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { _ in self.checkLid() }
     }
@@ -148,6 +162,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject, UNUs
             return
         }
         refresh()
+        if Date().timeIntervalSince(lastUpdateCheck) > 3600 { checkForUpdate() }
         DispatchQueue.global().async {
             let dirs = self.fetchRecentDirs()
             DispatchQueue.main.async { self.recentDirs = dirs }
@@ -318,10 +333,82 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject, UNUs
             let minutes = max(0, Int(end.timeIntervalSinceNow / 60))
             title = minutes >= 60 ? String(format: "%d:%02d", minutes / 60, minutes % 60) : "\(minutes)m"
         }
+        let widthChanges = (statusItem.button?.title ?? "").isEmpty != title.isEmpty
+            || (statusItem.button?.title.count ?? 0) != title.count
         statusItem.button?.title = title
         statusItem.button?.imagePosition = title.isEmpty ? .imageOnly : .imageLeading
         statusItem.button?.font = NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize - 1, weight: .medium)
         statusItem.length = title.isEmpty ? 30 : NSStatusItem.variableLength
+        // The item got wider or narrower (the time appeared or went away), so the
+        // open panel's arrow would point at where the eye used to be. Showing an
+        // open popover again moves it to the new spot.
+        if widthChanges && popover.isShown {
+            DispatchQueue.main.async {
+                guard self.popover.isShown, let button = self.statusItem.button else { return }
+                self.popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+            }
+        }
+    }
+
+    var updateReady: Bool { (Int(updateInfo["behind"] ?? "") ?? 0) > 0 }
+
+    func checkForUpdate() {
+        lastUpdateCheck = Date()
+        DispatchQueue.global().async {
+            let r = self.runScript(["update", "--state"])
+            var info: [String: String] = [:]
+            var changes: [String] = []
+            for line in r.output.split(separator: "\n") {
+                let parts = line.split(separator: "=", maxSplits: 1).map(String.init)
+                guard parts.count == 2 else { continue }
+                if parts[0] == "change" { changes.append(parts[1]) } else { info[parts[0]] = parts[1] }
+            }
+            DispatchQueue.main.async {
+                self.updateInfo = info
+                self.updateChanges = changes
+                self.autoInstallIfWanted()
+            }
+        }
+    }
+
+    /// With "Update automatically" on, install a waiting update by itself, but not
+    /// while the panel is open (the rebuilt app relaunches and the panel would vanish).
+    func autoInstallIfWanted() {
+        guard autoUpdate, updateReady, !updating, updateInfo["local_changes"] != "1", !popover.isShown else { return }
+        installUpdate(quiet: true)
+    }
+
+    /// Runs "insomnia update". Its output goes to a file, not a pipe: when the app's
+    /// code changed, build.sh quits this app and opens the new one mid-run.
+    func installUpdate(quiet: Bool = false) {
+        updating = true
+        let dir = NSHomeDirectory() + "/Library/Logs/Insomnia"
+        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        let log = dir + "/update.log"
+        FileManager.default.createFile(atPath: log, contents: nil)
+        let path = userPath
+        DispatchQueue.global().async {
+            var status: Int32 = -1
+            if let out = FileHandle(forWritingAtPath: log) {
+                let p = Process()
+                p.executableURL = URL(fileURLWithPath: "/bin/bash")
+                p.arguments = [scriptPath, "update"]
+                var env = ProcessInfo.processInfo.environment
+                env["PATH"] = path
+                p.environment = env
+                p.standardInput = FileHandle.nullDevice
+                p.standardOutput = out
+                p.standardError = out
+                if (try? p.run()) != nil { p.waitUntilExit(); status = p.terminationStatus }
+                try? out.close()
+            }
+            let text = (try? String(contentsOfFile: log, encoding: .utf8)) ?? ""
+            DispatchQueue.main.async {
+                self.updating = false
+                if status != 0 && !quiet { self.showError(text.isEmpty ? "The update didn't run." : text) }
+                self.checkForUpdate()
+            }
+        }
     }
 
     func setBusy(_ value: Bool) {
@@ -540,8 +627,12 @@ struct PanelView: View {
                 switchRow("Time left in the menu bar", Binding(get: { app.showTimeInMenuBar }, set: { app.showTimeInMenuBar = $0 }))
                 switchRow("Lock screen when the lid closes", Binding(get: { app.lockOnLidClose }, set: { app.lockOnLidClose = $0 }))
                 switchRow("Open at login", Binding(get: { app.openAtLogin }, set: { app.setOpenAtLogin($0) }))
+                if app.updateInfo["managed"] == "1" {
+                    switchRow("Update automatically", Binding(get: { app.autoUpdate }, set: { app.autoUpdate = $0 }))
+                }
             }
             Divider()
+            versionRow
             footer
         }
         .padding(16)
@@ -727,6 +818,58 @@ struct PanelView: View {
             Spacer()
             Toggle("", isOn: isOn).toggleStyle(.switch).controlSize(.mini).labelsHidden()
         }
+    }
+
+    // Which version this is, and a clear, one-click way to the newest one.
+    @ViewBuilder var versionRow: some View {
+        if app.updateInfo["managed"] == "1" {
+            if app.updateReady || app.updating {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: "arrow.down.circle.fill")
+                        .font(.title2).foregroundStyle(nightAccent)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(app.updating ? "Updating…" : "Update ready").font(.callout.weight(.semibold))
+                        Text("You have \(version("current")). Newest is \(version("latest")).")
+                            .font(.caption).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        ForEach(app.updateChanges.prefix(3), id: \.self) { change in
+                            Text("• \(change)").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        }
+                    }
+                    Spacer(minLength: 0)
+                    if app.updating {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Button("Update") { app.installUpdate() }
+                            .buttonStyle(.borderedProminent).tint(nightAccent).controlSize(.small)
+                            .help("Get the newest Insomnia from GitHub. A session that's on keeps running.")
+                    }
+                }
+                .padding(10)
+                .background(RoundedRectangle(cornerRadius: 10).fill(nightAccent.opacity(0.12)))
+                .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(nightAccent.opacity(0.35)))
+                .help(app.updateChanges.joined(separator: "\n"))
+            } else {
+                HStack(spacing: 4) {
+                    Text(app.updateInfo["offline"] == "1"
+                         ? "Version \(version("current")). Couldn't check for updates."
+                         : "Version \(version("current")), up to date.")
+                    Spacer()
+                    Button("Check") { app.checkForUpdate() }.buttonStyle(.link)
+                }
+                .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    /// "Nov 6 (3cac6c3)" from the date and commit the script reported.
+    func version(_ key: String) -> String {
+        let hash = app.updateInfo[key] ?? "?"
+        let input = DateFormatter()
+        input.dateFormat = "yyyy-MM-dd"
+        input.locale = Locale(identifier: "en_US_POSIX")
+        guard let raw = app.updateInfo[key + "_date"], let date = input.date(from: raw) else { return hash }
+        return "\(date.formatted(.dateTime.month(.abbreviated).day())) (\(hash))"
     }
 
     var footer: some View {
