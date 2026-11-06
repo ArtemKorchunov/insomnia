@@ -281,7 +281,7 @@ start_remote() {
     extra=()
     [ "$spawn" = worktree ] && extra=(--no-create-session-in-dir)
     echo "$dir" > "$REMOTE_STATE_DIR/$key.dir"
-    ( cd "$dir" && trap '' HUP && exec "$bin" remote-control --name "$computer · $(basename "$dir")" --spawn "$spawn" "${extra[@]}" ) </dev/null >"$REMOTE_STATE_DIR/$key.log" 2>&1 &
+    ( cd "$dir" && trap '' HUP && exec "$bin" remote-control --name "$computer · $(basename "$dir")" --spawn "$spawn" ${extra[@]+"${extra[@]}"} ) </dev/null >"$REMOTE_STATE_DIR/$key.log" 2>&1 &
     echo $! > "$REMOTE_STATE_DIR/$key.pid"
     started="$started $key"
   done <<< "$dirs"
