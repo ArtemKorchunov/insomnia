@@ -24,6 +24,21 @@ FAILED_LOG_DIR="$HOME/Library/Logs/Insomnia"
 CLAUDE_SETTINGS="$HOME/.claude/settings.json"
 CLAUDE_SESSIONS_DIR="$HOME/Library/Application Support/Claude/claude-code-sessions"
 SCHEDULE_RC_RULE=mcp__ccd_session_mgmt__set_remote_control
+# Personal settings that survive updates: INSOMNIA_*=value lines in
+# ~/.config/insomnia/config (read as plain values, never run as code). The
+# environment wins over the file.
+INSOMNIA_CONFIG="${INSOMNIA_CONFIG:-$HOME/.config/insomnia/config}"
+if [ -f "$INSOMNIA_CONFIG" ]; then
+  while IFS='=' read -r key value; do
+    case "$key" in
+      INSOMNIA_SCHEDULE_IGNORE|INSOMNIA_CLAUDE_BIN|INSOMNIA_REMOTE_MAX|INSOMNIA_REMOTE_MIN_BATTERY) ;;
+      *) continue ;;
+    esac
+    [ -n "${!key+set}" ] && continue
+    value="${value/#\~/$HOME}"
+    export "$key=$value"
+  done < "$INSOMNIA_CONFIG"
+fi
 SCHEDULE_IGNORE="${INSOMNIA_SCHEDULE_IGNORE-}"
 
 INTERVAL=30
