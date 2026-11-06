@@ -851,10 +851,21 @@ struct PanelView: View {
                         ForEach(app.updateChanges.prefix(3), id: \.self) { change in
                             Text("• \(change)").font(.caption).foregroundStyle(.secondary).lineLimit(1)
                         }
+                        Text(blocked
+                             ? "You changed files in the Insomnia folder, so it can't update. Undo or stash them there."
+                             : "Takes a minute. A session that's on and phone chats keep running.")
+                            .font(.caption).foregroundStyle(blocked ? Color.orange : Color.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer(minLength: 0)
                     if app.updating {
                         ProgressView().controlSize(.small)
+                    } else if blocked {
+                        Button("Show Folder") {
+                            app.closePopover()
+                            NSWorkspace.shared.open(URL(fileURLWithPath: app.updateInfo["repo"] ?? NSHomeDirectory()))
+                        }
+                        .controlSize(.small)
                     } else {
                         Button("Update") { app.installUpdate() }
                             .buttonStyle(.borderedProminent).tint(nightAccent).controlSize(.small)
@@ -889,6 +900,9 @@ struct PanelView: View {
         let day = date.formatted(.dateTime.month(.abbreviated).day())
         return withHash ? "\(day) (\(hash))" : day
     }
+
+    /// Files edited in the clone stop a fast-forward; say so instead of offering a button that fails.
+    var blocked: Bool { app.updateInfo["local_changes"] == "1" }
 
     /// "Your version Nov 5 → new Nov 6".
     var versionStep: String {

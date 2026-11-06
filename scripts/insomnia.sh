@@ -655,6 +655,7 @@ update_state() {
     return 0
   fi
   echo "managed=1"
+  echo "repo=$repo"
   git -C "$repo" log -1 --format='current=%h%ncurrent_date=%cd' --date=short HEAD
   if ! git -C "$repo" fetch --quiet 2>/dev/null; then
     echo "offline=1"
