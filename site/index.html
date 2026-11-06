@@ -194,6 +194,9 @@ nav .links a:hover{color:var(--ink);background:rgba(255,255,255,.08)}
 .lid{position:absolute;inset:0;z-index:6;pointer-events:none;background:linear-gradient(180deg,#0b0c22,#05060f);transform-origin:bottom;transform:perspective(1400px) rotateX(-92deg);opacity:0;transition:transform .9s cubic-bezier(.6,.05,.3,1),opacity .2s;
   display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px;color:var(--ink-2);font-size:14px}
 .lid.shut{transform:perspective(1400px) rotateX(0);opacity:1;pointer-events:auto}
+.lid-shut .handset{z-index:7}
+.lid{justify-content:flex-start;padding-top:150px}
+@media (min-width:821px){.lid{align-items:flex-end;padding-right:12%;text-align:right}}
 .lid img{width:64px;height:64px;opacity:.9}
 .lid .status{font:600 18px var(--display);color:var(--ink)}
 .lid-btn{position:absolute;right:22px;bottom:18px;z-index:7}
@@ -419,7 +422,7 @@ footer a{color:var(--ink-2)}
       <div id="lidSub">Screen locked · fans and throttling left to macOS</div>
     </div>
     <button class="btn btn-glass lid-btn" id="lidBtn">Close the lid</button>
-    <div class="hint"><kbd>Try it</kbd> Flip the switch, pick a time, turn on phone access.</div>
+    <div class="hint"><kbd>Try it</kbd> Open the lid, flip the switch, pick a time.</div>
   </div>
 </div>
 
@@ -658,8 +661,10 @@ footer a{color:var(--ink-2)}
   function stopChat(){ chatTimers.forEach(clearTimeout); chatTimers=[]; document.querySelectorAll('.bub').forEach(b=>b.classList.remove('show')); }
 
   // close the lid
-  $('#lidBtn').onclick = () => {
-    const lid = $('#lid'), shut = !lid.classList.contains('shut');
+  $('#lidBtn').onclick = () => setLid(!$('#lid').classList.contains('shut'));
+  function setLid(shut){
+    const lid = $('#lid');
+    $('#stage').classList.toggle('lid-shut', shut);
     lid.classList.toggle('shut', shut);
     $('#lidBtn').textContent = shut ? 'Open the lid' : 'Close the lid';
     if (shut){
@@ -667,7 +672,19 @@ footer a{color:var(--ink-2)}
       $('#lidSub').textContent = S.on ? (S.end ? `Screen locked · sleeps at ${fmt(S.end)}` : 'Screen locked · no time limit') + (S.phone.length? ' · phone access on' : '')
                                      : 'Nothing kept it awake. Turn Insomnia on first.';
     }
-  };
+  }
+
+  // Play the story once when the demo comes into view: phone access on, lid closed,
+  // and the phone chat carries on. Any click inside the demo hands control to the visitor.
+  let auto = [], played = false;
+  const cancelAuto = () => { auto.forEach(clearTimeout); auto = []; };
+  $('#stage').addEventListener('pointerdown', cancelAuto, true);
+  new IntersectionObserver((es, io) => {
+    if (played || !es[0].isIntersecting) return;
+    played = true; io.disconnect();
+    auto.push(setTimeout(() => addPhone(FOLDERS), 1400));
+    auto.push(setTimeout(() => setLid(true), 3600));
+  }, {threshold: .55}).observe($('#stage'));
 
   // time moves a minute per second while on, so the ring visibly drains
   setInterval(() => {
