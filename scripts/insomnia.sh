@@ -17,6 +17,7 @@ REMOTE_DIRFILE=/tmp/insomnia-remote.dir
 REMOTE_STATE_DIR=/tmp/insomnia-remote.d
 REMOTE_GUARD_PIDFILE=/tmp/insomnia-remote-guard.pid
 LAST_DIR_FILE="$HOME/.config/insomnia/last-dir"
+UPDATED_FILE="$HOME/.config/insomnia/just-updated"
 HEAL_LABEL=com.oddproblems.insomnia.heal
 HEAL_NOTIFIED=/tmp/insomnia-heal.notified
 FAILED_LOG_DIR="$HOME/Library/Logs/Insomnia"
@@ -701,6 +702,10 @@ cmd_update() {
   fi
   echo "Updated Insomnia to $(git -C "$repo" log -1 --format=%h). New:"
   git -C "$repo" log --format='  - %s' "$old..HEAD"
+  # The menu bar app reads this once (after it restarts, if it was rebuilt) to say
+  # the update landed and what's new.
+  mkdir -p "$(dirname "$UPDATED_FILE")"
+  git -C "$repo" log --format='%s' "$old..HEAD" > "$UPDATED_FILE"
   if [ -d "$HOME/Applications/Insomnia.app" ] && ! git -C "$repo" diff --quiet "$old" HEAD -- menubar; then
     echo "Rebuilding the menu bar app..."
     "$repo/menubar/build.sh" || { echo "The app didn't build. The command is updated; run $repo/menubar/build.sh to see why." >&2; return 1; }

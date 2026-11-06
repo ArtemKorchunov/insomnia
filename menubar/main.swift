@@ -151,6 +151,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject, UNUs
             intentIdentifiers: [])])
         center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
         Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { _ in self.refresh() }
+        announceUpdate()
         checkForUpdate()
         Timer.scheduledTimer(withTimeInterval: 6 * 3600, repeats: true) { _ in self.checkForUpdate() }
         activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiatedAllowingIdleSystemSleep], reason: "Watch the lid to lock the screen")
@@ -373,6 +374,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject, UNUs
         }
     }
 
+    /// "insomnia update" leaves the new changes in a file; say once that the update
+    /// landed, so nobody has to wonder whether it worked.
+    func announceUpdate() {
+        let file = NSHomeDirectory() + "/.config/insomnia/just-updated"
+        guard let text = try? String(contentsOfFile: file, encoding: .utf8) else { return }
+        try? FileManager.default.removeItem(atPath: file)
+        let changes = text.split(separator: "\n").map(String.init).filter { !$0.isEmpty }
+        var body = changes.first ?? "You have the newest version."
+        if changes.count > 1 { body += " (and \(changes.count - 1) more)" }
+        notify(title: "Insomnia updated", body: body)
+    }
+
     /// With "Update automatically" on, install a waiting update by itself, but not
     /// while the panel is open (the rebuilt app relaunches and the panel would vanish).
     func autoInstallIfWanted() {
@@ -407,6 +420,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject, UNUs
             let text = (try? String(contentsOfFile: log, encoding: .utf8)) ?? ""
             DispatchQueue.main.async {
                 self.updating = false
+                self.announceUpdate()
                 if status != 0 && !quiet { self.showError(text.isEmpty ? "The update didn't run." : text) }
                 self.checkForUpdate()
             }
