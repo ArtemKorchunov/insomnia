@@ -644,7 +644,16 @@ struct PanelView: View {
                 switchRow("Lock screen when the lid closes", Binding(get: { app.lockOnLidClose }, set: { app.lockOnLidClose = $0 }))
                 switchRow("Open at login", Binding(get: { app.openAtLogin }, set: { app.setOpenAtLogin($0) }))
                 if app.updateInfo["managed"] == "1" {
-                    switchRow("Update automatically", Binding(get: { app.autoUpdate }, set: { app.autoUpdate = $0 }))
+                    HStack {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("Update automatically").font(.callout)
+                            Text(updateCaption).font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Toggle("", isOn: Binding(get: { app.autoUpdate }, set: { app.autoUpdate = $0 }))
+                            .toggleStyle(.switch).controlSize(.mini).labelsHidden()
+                    }
+                    .help(app.updateInfo["current"].map { "Version \($0)" } ?? "")
                 }
             }
             Divider()
@@ -876,15 +885,6 @@ struct PanelView: View {
                 .background(RoundedRectangle(cornerRadius: 10).fill(nightAccent.opacity(0.12)))
                 .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(nightAccent.opacity(0.35)))
                 .help((["\(app.updateInfo["current"] ?? "?") → \(app.updateInfo["latest"] ?? "?")"] + app.updateChanges).joined(separator: "\n"))
-            } else {
-                HStack(spacing: 4) {
-                    Text(app.updateInfo["offline"] == "1"
-                         ? "Version \(version("current")). Couldn't check for updates."
-                         : "Version \(version("current")), up to date.")
-                    Spacer()
-                    Button("Check") { app.checkForUpdate() }.buttonStyle(.link)
-                }
-                .font(.caption).foregroundStyle(.secondary)
             }
         }
     }
@@ -899,6 +899,13 @@ struct PanelView: View {
         guard let raw = app.updateInfo[key + "_date"], let date = input.date(from: raw) else { return hash }
         let day = date.formatted(.dateTime.month(.abbreviated).day())
         return withHash ? "\(day) (\(hash))" : day
+    }
+
+    /// The version and update status, under the "Update automatically" switch.
+    var updateCaption: String {
+        if app.updateInfo["offline"] == "1" { return "Version \(version("current")). Couldn't reach GitHub." }
+        if app.updateReady { return "Version \(version("current"))." }
+        return "Up to date (version \(version("current")))."
     }
 
     /// Files edited in the clone stop a fast-forward; say so instead of offering a button that fails.
