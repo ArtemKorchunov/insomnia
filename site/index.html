@@ -239,7 +239,7 @@ h2{font:800 clamp(34px,5vw,60px)/1 var(--display);letter-spacing:-.03em;margin:0
 /* the evening, in time order */
 .timeline{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:48px}
 @media (max-width:960px){.timeline{grid-template-columns:1fr 1fr}}
-@media (max-width:560px){.timeline{grid-template-columns:1fr}}
+@media (max-width:560px){.timeline{grid-template-columns:1fr}.moment{min-height:0}}
 .moment{padding:22px;border-radius:22px;min-height:300px;display:flex;flex-direction:column}
 .moment time{font:700 34px/1 var(--display);letter-spacing:-.02em;font-variant-numeric:tabular-nums}
 .moment time small{font:500 13px var(--sys);color:var(--ink-3);margin-left:6px;letter-spacing:0}
@@ -265,6 +265,7 @@ h2{font:800 clamp(34px,5vw,60px)/1 var(--display);letter-spacing:-.03em;margin:0
 .promise{padding:22px 24px;border-radius:22px}
 .promise h3{font:700 19px/1.2 var(--display);margin:0 0 6px}
 .promise p{margin:0;color:var(--ink-2);font-size:15px}
+.promise a{color:var(--violet-soft)}
 .promise code,.faq code{font:13px var(--mono);color:var(--violet-soft)}
 
 /* install */
@@ -491,6 +492,7 @@ footer a{color:var(--ink-2)}
       <div class="promises">
         <div class="promise glass"><h3>Cooling is never touched</h3><p>Fans, SMC thermal control and CPU throttling work exactly as with the lid open. Insomnia only stops the lid and idle from putting the Mac to sleep.</p></div>
         <div class="promise glass"><h3>Even a crash can't leave sleep off</h3><p>A small login agent checks every minute. If sleep is still off with nothing watching it, after a <code>kill -9</code> or a reboot, it turns sleep back on.</p></div>
+        <div class="promise glass"><h3>Phone access opens no ports</h3><p>It uses Claude Code's own Remote Control, which <a href="https://code.claude.com/docs/en/remote-control">only makes outbound HTTPS requests</a> and never listens for connections on your Mac. You reach it through your own Claude account.</p></div>
         <div class="promise glass"><h3>Passwordless only for what it runs</h3><p>An optional rule allows just the exact <code>pmset</code> and <code>powermetrics</code> commands Insomnia uses, checked with visudo. The script itself never gets root.</p></div>
       </div>
     </div>
