@@ -212,6 +212,20 @@ section{padding:120px 0 0}
 h2{font:800 clamp(34px,5vw,60px)/1 var(--display);letter-spacing:-.03em;margin:0;max-width:16ch}
 .sub{color:var(--ink-2);font-size:18px;max-width:52ch;margin:18px 0 0}
 
+
+/* why not just… : the workarounds people already use */
+.vs{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:44px}
+@media (max-width:900px){.vs{grid-template-columns:1fr}}
+.alt{padding:22px 24px;border-radius:22px}
+.alt h3{font:700 19px/1.2 var(--display);margin:0 0 4px}
+.alt h3 code{font:600 15px var(--mono);color:var(--violet-soft)}
+.alt .works{color:var(--ink-2);font-size:15px;margin:0}
+.alt .breaks{margin:14px 0 0;padding-top:14px;border-top:1px solid var(--line);font-size:15px;color:var(--ink);display:flex;gap:10px}
+.alt .breaks::before{content:"";flex:none;width:8px;height:8px;margin-top:8px;border-radius:50%;background:var(--spark);box-shadow:0 0 10px var(--spark)}
+.fix{margin-top:16px;padding:20px 24px;border-radius:22px;display:flex;align-items:center;gap:16px;font-size:16px}
+.fix img{width:40px;height:40px;flex:none}
+.fix b{font-family:var(--display)}
+
 /* the evening, in time order */
 .timeline{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:48px}
 @media (max-width:960px){.timeline{grid-template-columns:1fr 1fr}}
@@ -409,6 +423,19 @@ footer a{color:var(--ink-2)}
   </div>
 </div>
 
+
+<div class="wrap">
+  <section id="why">
+    <p class="kicker">Why not just…</p>
+    <h2>You've probably tried one of these.</h2>
+    <div class="vs">
+      <article class="alt glass"><h3>Leave the lid open</h3><p class="works">The Mac stays awake.</p><p class="breaks">The screen glows all night, and anyone who tidies the desk closes it and kills the run.</p></article>
+      <article class="alt glass"><h3><code>caffeinate</code> or a keep-awake app</h3><p class="works">Stops the Mac from sleeping when idle.</p><p class="breaks">Closing the lid still puts it to sleep, unless an external display is plugged in.</p></article>
+      <article class="alt glass"><h3><code>sudo pmset disablesleep 1</code></h3><p class="works">Really keeps it awake with the lid closed.</p><p class="breaks">Nothing ever turns it back on. One night in a bag and it's hot and empty.</p></article>
+    </div>
+    <div class="fix glass"><img src="img/app-icon.png" alt=""><span><b>Insomnia uses the third one</b>, and adds what it lacks: a watchdog that turns sleep back on when it's too hot, too low or too late, even after a crash.</span></div>
+  </section>
+</div>
 <div class="wrap">
   <section id="evening">
     <p class="kicker">One evening with Insomnia</p>
