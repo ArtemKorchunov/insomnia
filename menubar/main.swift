@@ -642,7 +642,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject, UNUs
 
 // MARK: - Panel
 
-let nightAccent = Color(red: 0.42, green: 0.40, blue: 0.95)
+/// Graphite, like macOS's own Graphite accent: a neutral grey, lighter in dark mode.
+let nightAccent = Color(nsColor: NSColor(name: nil) { appearance in
+    appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        ? NSColor(calibratedWhite: 0.62, alpha: 1)
+        : NSColor(calibratedWhite: 0.42, alpha: 1)
+})
 
 struct PanelView: View {
     @ObservedObject var app: AppDelegate
@@ -687,6 +692,7 @@ struct PanelView: View {
         }
         .padding(16)
         .frame(width: 340)
+        .tint(nightAccent)
     }
 
     // The one thing worth looking at: on or off, and how long it has left.
@@ -971,7 +977,7 @@ struct TimeRing: View {
                 .renderingMode(.template)
                 .resizable().scaledToFit()
                 .frame(width: 26, height: 26)
-                .foregroundStyle(on ? nightAccent : .secondary)
+                .foregroundStyle(on ? Color.primary : .secondary)
         }
     }
 }
