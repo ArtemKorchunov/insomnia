@@ -166,84 +166,185 @@ func menuIcon(_ kind: MenuIconKind) -> NSImage {
     return image
 }
 
+// MARK: - App icon: a glass eye on a midnight squircle, the Claude spark as its iris.
+
+private func iconColor(_ r: CGFloat, _ g: CGFloat, _ b: CGFloat, _ a: CGFloat = 1) -> NSColor {
+    NSColor(calibratedRed: r / 255, green: g / 255, blue: b / 255, alpha: a)
+}
+
+/// Superellipse |x|^5 + |y|^5 = 1, the outline of macOS app icons.
+private func squirclePath(_ r: NSRect) -> NSBezierPath {
+    let n: CGFloat = 5, p = NSBezierPath()
+    for i in 0...360 {
+        let t = CGFloat(i) * .pi / 180, c = cos(t), sn = sin(t)
+        let pt = NSPoint(x: r.midX + r.width / 2 * (c < 0 ? -1 : 1) * pow(abs(c), 2 / n),
+                         y: r.midY + r.height / 2 * (sn < 0 ? -1 : 1) * pow(abs(sn), 2 / n))
+        i == 0 ? p.move(to: pt) : p.line(to: pt)
+    }
+    p.close()
+    return p
+}
+
+/// The outline of a stroke as a fillable path (works on macOS 13, unlike NSBezierPath.cgPath).
+private func strokedOutline(_ path: NSBezierPath, width: CGFloat) -> NSBezierPath {
+    let cg = CGMutablePath()
+    var pts = [NSPoint](repeating: .zero, count: 3)
+    for i in 0..<path.elementCount {
+        switch path.element(at: i, associatedPoints: &pts) {
+        case .moveTo: cg.move(to: pts[0])
+        case .lineTo: cg.addLine(to: pts[0])
+        case .curveTo, .cubicCurveTo: cg.addCurve(to: pts[2], control1: pts[0], control2: pts[1])
+        case .quadraticCurveTo: cg.addQuadCurve(to: pts[1], control: pts[0])
+        case .closePath: cg.closeSubpath()
+        @unknown default: break
+        }
+    }
+    let out = NSBezierPath()
+    cg.copy(strokingWithWidth: width, lineCap: .round, lineJoin: .round, miterLimit: 10).applyWithBlock { el in
+        let e = el.pointee, q = e.points
+        switch e.type {
+        case .moveToPoint: out.move(to: q[0])
+        case .addLineToPoint: out.line(to: q[0])
+        case .addQuadCurveToPoint:
+            let cur = out.currentPoint
+            out.curve(to: q[1], controlPoint1: NSPoint(x: cur.x + 2 / 3 * (q[0].x - cur.x), y: cur.y + 2 / 3 * (q[0].y - cur.y)),
+                      controlPoint2: NSPoint(x: q[1].x + 2 / 3 * (q[0].x - q[1].x), y: q[1].y + 2 / 3 * (q[0].y - q[1].y)))
+        case .addCurveToPoint: out.curve(to: q[2], controlPoint1: q[0], controlPoint2: q[1])
+        case .closeSubpath: out.close()
+        @unknown default: break
+        }
+    }
+    return out
+}
+
+// The eye, in the same 18-unit space as the menu bar icon.
+private let eyeOpen: CGFloat = 5.8, eyeCorner: CGFloat = 2.6
+private let upperLid: CGFloat = 1.2, lowerLid: CGFloat = 0.75, lashLength: CGFloat = 2.1
+private let eyeP = (l: NSPoint(x: 1.5, y: 9), r: NSPoint(x: 16.5, y: 9),
+                    c1: NSPoint(x: 1.5 + eyeCorner, y: 9 + eyeOpen), c2: NSPoint(x: 16.5 - eyeCorner, y: 9 + eyeOpen),
+                    d1: NSPoint(x: 16.5 - eyeCorner, y: 9 - eyeOpen), d2: NSPoint(x: 1.5 + eyeCorner, y: 9 - eyeOpen))
+
+/// A point on the upper lid at u (0...1) and the outward normal there.
+private func upperLidPoint(_ u: CGFloat) -> (NSPoint, NSPoint) {
+    let p0 = eyeP.l, p1 = eyeP.c1, p2 = eyeP.c2, p3 = eyeP.r, m = 1 - u
+    let x = m*m*m*p0.x + 3*m*m*u*p1.x + 3*m*u*u*p2.x + u*u*u*p3.x
+    let y = m*m*m*p0.y + 3*m*m*u*p1.y + 3*m*u*u*p2.y + u*u*u*p3.y
+    let dx = 3*m*m*(p1.x-p0.x) + 6*m*u*(p2.x-p1.x) + 3*u*u*(p3.x-p2.x)
+    let dy = 3*m*m*(p1.y-p0.y) + 6*m*u*(p2.y-p1.y) + 3*u*u*(p3.y-p2.y)
+    let len = sqrt(dx*dx + dy*dy)
+    return (NSPoint(x: x, y: y), NSPoint(x: -dy / len, y: dx / len))
+}
+
 func drawAppIcon(size: CGFloat) {
     let s = size / 1024
     let rect = NSRect(x: 100 * s, y: 100 * s, width: 824 * s, height: 824 * s)
-    let squircle = NSBezierPath(roundedRect: rect, xRadius: 185 * s, yRadius: 185 * s)
+    let tile = squirclePath(rect)
 
     NSGraphicsContext.saveGraphicsState()
-    let shadow = NSShadow()
-    shadow.shadowColor = NSColor.black.withAlphaComponent(0.35)
-    shadow.shadowBlurRadius = 28 * s
-    shadow.shadowOffset = NSSize(width: 0, height: -12 * s)
-    shadow.set()
-    NSColor(calibratedRed: 0.08, green: 0.07, blue: 0.22, alpha: 1).setFill()
-    squircle.fill()
+    let sh = NSShadow(); sh.shadowColor = NSColor.black.withAlphaComponent(0.3)
+    sh.shadowBlurRadius = 14 * s; sh.shadowOffset = NSSize(width: 0, height: -8 * s); sh.set()
+    iconColor(10, 11, 34).setFill(); tile.fill()
     NSGraphicsContext.restoreGraphicsState()
 
     NSGraphicsContext.saveGraphicsState()
-    squircle.addClip()
-    NSGradient(colors: [
-        NSColor(calibratedRed: 0.36, green: 0.22, blue: 0.62, alpha: 1),
-        NSColor(calibratedRed: 0.13, green: 0.12, blue: 0.38, alpha: 1),
-        NSColor(calibratedRed: 0.04, green: 0.05, blue: 0.16, alpha: 1),
-    ])?.draw(in: rect, angle: -90)
+    tile.addClip()
+    NSGradient(colors: [iconColor(104, 88, 196), iconColor(46, 42, 124), iconColor(20, 19, 62), iconColor(30, 22, 66)],
+               atLocations: [0, 0.42, 0.78, 1], colorSpace: .deviceRGB)!.draw(in: rect, angle: -90)
+    iconColor(255, 255, 255, 0.9).setFill(); NSBezierPath(ovalIn: NSRect(x: 268 * s, y: 790 * s, width: 13 * s, height: 13 * s)).fill()
+    iconColor(255, 255, 255, 0.65).setFill(); NSBezierPath(ovalIn: NSRect(x: 752 * s, y: 836 * s, width: 9 * s, height: 9 * s)).fill()
 
-    let stars: [(CGFloat, CGFloat, CGFloat)] = [
-        (210, 790, 9), (300, 860, 5), (760, 840, 7), (840, 720, 5), (650, 880, 4),
-        (180, 640, 4), (870, 560, 6), (420, 820, 4), (560, 800, 6), (250, 300, 4), (800, 260, 5),
-    ]
-    for (x, y, r) in stars {
-        NSColor.white.withAlphaComponent(0.85).setFill()
-        NSBezierPath(ovalIn: NSRect(x: (x - r) * s, y: (y - r) * s, width: r * 2 * s, height: r * 2 * s)).fill()
-    }
+    let k = 36 * s
+    let t = NSAffineTransform(); t.translateX(by: 512 * s, yBy: 500 * s); t.scale(by: k); t.translateX(by: -9, yBy: -9)
+    let up = NSBezierPath(); up.move(to: eyeP.l); up.curve(to: eyeP.r, controlPoint1: eyeP.c1, controlPoint2: eyeP.c2)
+    let lo = NSBezierPath(); lo.move(to: eyeP.r); lo.curve(to: eyeP.l, controlPoint1: eyeP.d1, controlPoint2: eyeP.d2)
+    let eye = NSBezierPath(); eye.move(to: eyeP.l)
+    eye.curve(to: eyeP.r, controlPoint1: eyeP.c1, controlPoint2: eyeP.c2)
+    eye.curve(to: eyeP.l, controlPoint1: eyeP.d1, controlPoint2: eyeP.d2); eye.close()
+    for p in [up, lo, eye] { p.transform(using: t as AffineTransform) }
+    let eb = eye.bounds
+    let lid = strokedOutline(up, width: upperLid * k); lid.append(strokedOutline(lo, width: lowerLid * k))
+    lid.windingRule = .nonZero
 
-    let glow = NSGradient(colors: [
-        NSColor(calibratedRed: 1, green: 0.85, blue: 0.45, alpha: 0.35),
-        NSColor(calibratedRed: 1, green: 0.85, blue: 0.45, alpha: 0),
-    ])
-    glow?.draw(fromCenter: NSPoint(x: 512 * s, y: 500 * s), radius: 0, toCenter: NSPoint(x: 512 * s, y: 500 * s), radius: 330 * s, options: [])
+    // tight contact shadow under the eye
+    NSGraphicsContext.saveGraphicsState()
+    let es = NSShadow(); es.shadowColor = iconColor(4, 4, 24, 0.55)
+    es.shadowBlurRadius = 8 * s; es.shadowOffset = NSSize(width: 0, height: -10 * s); es.set()
+    iconColor(20, 16, 54).setFill(); lid.fill(); eye.fill()
+    NSGraphicsContext.restoreGraphicsState()
 
-    let transform = NSAffineTransform()
-    transform.translateX(by: 512 * s, yBy: 500 * s)
-    transform.scale(by: 40 * s)
-    transform.translateX(by: -9, yBy: -9)
-
-    let eye = openEyePath()
-    eye.transform(using: transform as AffineTransform)
-    NSColor(calibratedRed: 0.97, green: 0.96, blue: 1, alpha: 1).setFill()
-    eye.fill()
-
+    // the white of the eye, shaded a little under the upper lid
     NSGraphicsContext.saveGraphicsState()
     eye.addClip()
-    let irisCenter = NSPoint(x: 512 * s, y: 500 * s)
+    NSGradient(colors: [iconColor(255, 255, 255), iconColor(240, 238, 255), iconColor(216, 212, 250)],
+               atLocations: [0, 0.55, 1], colorSpace: .deviceRGB)!.draw(in: eb, angle: -90)
+    NSGradient(colors: [iconColor(150, 140, 230, 0.55), iconColor(150, 140, 230, 0)])!
+        .draw(in: NSRect(x: eb.minX, y: eb.maxY - eb.height * 0.32, width: eb.width, height: eb.height * 0.32), angle: -90)
+
+    // the iris disc
+    let c = NSPoint(x: 512 * s, y: 500 * s), r = 3.35 * k
+    let iris = NSRect(x: c.x - r, y: c.y - r, width: 2 * r, height: 2 * r)
+    NSGraphicsContext.saveGraphicsState()
+    NSBezierPath(ovalIn: iris).addClip()
+    NSGradient(colors: [iconColor(92, 84, 200), iconColor(52, 42, 140), iconColor(30, 22, 84)], atLocations: [0, 0.6, 1], colorSpace: .deviceRGB)!
+        .draw(fromCenter: NSPoint(x: c.x, y: c.y + r * 0.25), radius: 0, toCenter: c, radius: r, options: [])
+    NSGraphicsContext.restoreGraphicsState()
+    let ring = NSBezierPath(ovalIn: iris.insetBy(dx: 0.12 * k, dy: 0.12 * k))
+    ring.lineWidth = 0.24 * k; iconColor(22, 16, 64).setStroke(); ring.stroke()
+
+    // a sharp-edged reflection across the white, kept off the iris
+    let shine = NSBezierPath(ovalIn: NSRect(x: eb.minX - eb.width * 0.05, y: eb.midY + eb.height * 0.02, width: eb.width * 1.1, height: eb.height * 1.3))
+    shine.append(NSBezierPath(ovalIn: NSRect(x: eb.minX - eb.width * 0.1, y: eb.midY + eb.height * 0.2, width: eb.width * 1.2, height: eb.height * 1.4)).reversed)
+    NSGraphicsContext.saveGraphicsState()
+    let outside = NSBezierPath(rect: eb.insetBy(dx: -50 * s, dy: -50 * s))
+    outside.append(NSBezierPath(ovalIn: iris).reversed)
+    outside.addClip()
+    NSColor.white.withAlphaComponent(0.55).setFill(); shine.fill()
+    NSGraphicsContext.restoreGraphicsState()
+
+    // the Claude spark, unchanged
     let claudeOrange = NSColor(calibratedRed: 0.851, green: 0.467, blue: 0.341, alpha: 1)
     if let mask = sparkMask {
-        drawSparkMask(mask, center: irisCenter, radius: 2.9 * 40 * s, color: claudeOrange)
+        drawSparkMask(mask, center: c, radius: 2.9 * k, color: claudeOrange)
     } else {
         claudeOrange.setFill()
-        sparkPath(center: irisCenter, radius: 2.6 * 40 * s).fill()
+        sparkPath(center: c, radius: 2.6 * k).fill()
     }
     NSGraphicsContext.restoreGraphicsState()
 
-    NSColor(calibratedRed: 0.1, green: 0.08, blue: 0.25, alpha: 1).setStroke()
-    eye.lineWidth = 1.4 * 40 * s
-    eye.lineJoinStyle = .round
-    eye.stroke()
+    // the lids, with one crisp gloss line inside the upper lid
+    NSGraphicsContext.saveGraphicsState()
+    lid.addClip()
+    iconColor(22, 17, 58).setFill(); lid.fill()
+    let gloss = up.copy() as! NSBezierPath
+    let nudge = NSAffineTransform(); nudge.translateX(by: 0, yBy: upperLid * k * 0.12); gloss.transform(using: nudge as AffineTransform)
+    iconColor(160, 150, 255, 0.45).setFill(); strokedOutline(gloss, width: upperLid * k * 0.14).fill()
+    NSGraphicsContext.restoreGraphicsState()
 
-    let lashes = NSBezierPath()
-    lashes.lineWidth = 1.3 * 40 * s
-    lashes.lineCapStyle = .round
-    for (a, b) in [
-        (NSPoint(x: 4.83, y: 12.09), NSPoint(x: 3.8, y: 14.1)),
-        (NSPoint(x: 9, y: 13.12), NSPoint(x: 9, y: 15.6)),
-        (NSPoint(x: 13.17, y: 12.09), NSPoint(x: 14.2, y: 14.1)),
-    ] {
-        lashes.move(to: a)
-        lashes.line(to: b)
+    // lashes: glass pills curving out from the upper lid
+    for u in [0.2, 0.5, 0.8] as [CGFloat] {
+        let (p, n) = upperLidPoint(u)
+        let start = NSPoint(x: p.x + n.x * upperLid * 0.2, y: p.y + n.y * upperLid * 0.2)
+        let side: CGFloat = u < 0.5 ? -1 : (u > 0.5 ? 1 : 0)
+        let end = NSPoint(x: start.x + n.x * lashLength + side * 0.45, y: start.y + n.y * lashLength)
+        let lash = NSBezierPath(); lash.move(to: start)
+        lash.curve(to: end, controlPoint1: NSPoint(x: start.x + n.x * lashLength * 0.5, y: start.y + n.y * lashLength * 0.5),
+                   controlPoint2: NSPoint(x: end.x - side * 0.2, y: end.y - 0.3))
+        lash.transform(using: t as AffineTransform)
+        let pill = strokedOutline(lash, width: 1.05 * k)
+        NSGraphicsContext.saveGraphicsState()
+        let ps = NSShadow(); ps.shadowColor = iconColor(4, 4, 24, 0.4)
+        ps.shadowBlurRadius = 2.5 * s; ps.shadowOffset = NSSize(width: 0, height: -4 * s); ps.set()
+        iconColor(236, 234, 255).setFill(); pill.fill()
+        NSGraphicsContext.restoreGraphicsState()
+        NSGraphicsContext.saveGraphicsState(); pill.addClip()
+        NSGradient(colors: [iconColor(255, 255, 255), iconColor(206, 200, 250)])!.draw(in: pill.bounds, angle: -90)
+        NSGraphicsContext.restoreGraphicsState()
     }
-    lashes.transform(using: transform as AffineTransform)
-    NSColor(calibratedRed: 0.97, green: 0.96, blue: 1, alpha: 1).setStroke()
-    lashes.stroke()
+    NSGraphicsContext.restoreGraphicsState()
+
+    // a hairline of light around the tile
+    NSGraphicsContext.saveGraphicsState()
+    strokedOutline(tile, width: 3 * s).addClip()
+    NSGradient(colors: [NSColor.white.withAlphaComponent(0.45), NSColor.white.withAlphaComponent(0.05)])!.draw(in: rect, angle: -90)
     NSGraphicsContext.restoreGraphicsState()
 }
