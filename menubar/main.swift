@@ -642,11 +642,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject, UNUs
 
 // MARK: - Panel
 
-/// Graphite, like macOS's own Graphite accent: a neutral grey, lighter in dark mode.
+/// The one accent on the graphite panel: the coral of the Claude spark in the app icon,
+/// a little lighter in dark mode.
 let nightAccent = Color(nsColor: NSColor(name: nil) { appearance in
     appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        ? NSColor(calibratedWhite: 0.62, alpha: 1)
-        : NSColor(calibratedWhite: 0.42, alpha: 1)
+        ? NSColor(calibratedRed: 0.910, green: 0.529, blue: 0.416, alpha: 1)
+        : NSColor(calibratedRed: 0.851, green: 0.467, blue: 0.341, alpha: 1)
 })
 
 struct PanelView: View {
@@ -785,6 +786,7 @@ struct PanelView: View {
                 let canExtend = app.isRunning && app.deadline != nil && !app.busy
                 Button("+1 h") { app.extendByOneHour() }
                     .controlSize(.small)
+                    .tint(.primary)
                     .help("Push the stop time one hour later")
                     .disabled(!canExtend)
                     .opacity(canExtend ? 1 : 0)
@@ -956,6 +958,7 @@ struct PanelView: View {
             Button("Quit") { NSApp.terminate(nil) }
         }
         .controlSize(.small)
+        .tint(.primary)
     }
 }
 
