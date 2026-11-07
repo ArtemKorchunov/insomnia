@@ -253,8 +253,21 @@ func drawAppIcon(size: CGFloat) {
     iconColor(255, 255, 255, 0.9).setFill(); NSBezierPath(ovalIn: NSRect(x: 268 * s, y: 790 * s, width: 13 * s, height: 13 * s)).fill()
     iconColor(255, 255, 255, 0.65).setFill(); NSBezierPath(ovalIn: NSRect(x: 752 * s, y: 836 * s, width: 9 * s, height: 9 * s)).fill()
 
-    let k = 36 * s
-    let t = NSAffineTransform(); t.translateX(by: 512 * s, yBy: 500 * s); t.scale(by: k); t.translateX(by: -9, yBy: -9)
+    drawLogoEye(center: NSPoint(x: 512 * s, y: 500 * s), k: 36 * s, s: s, spark: true)
+    NSGraphicsContext.restoreGraphicsState()
+
+    // a hairline of light around the tile
+    NSGraphicsContext.saveGraphicsState()
+    strokedOutline(tile, width: 3 * s).addClip()
+    NSGradient(colors: [NSColor.white.withAlphaComponent(0.45), NSColor.white.withAlphaComponent(0.05)])!.draw(in: rect, angle: -90)
+    NSGraphicsContext.restoreGraphicsState()
+}
+
+let claudeOrange = NSColor(calibratedRed: 0.851, green: 0.467, blue: 0.341, alpha: 1)
+
+/// The eye from the app icon: k is the size of one eye unit, s scales shadows and edges.
+func drawLogoEye(center c: NSPoint, k: CGFloat, s: CGFloat, spark: Bool) {
+    let t = NSAffineTransform(); t.translateX(by: c.x, yBy: c.y); t.scale(by: k); t.translateX(by: -9, yBy: -9)
     let up = NSBezierPath(); up.move(to: eyeP.l); up.curve(to: eyeP.r, controlPoint1: eyeP.c1, controlPoint2: eyeP.c2)
     let lo = NSBezierPath(); lo.move(to: eyeP.r); lo.curve(to: eyeP.l, controlPoint1: eyeP.d1, controlPoint2: eyeP.d2)
     let eye = NSBezierPath(); eye.move(to: eyeP.l)
@@ -281,7 +294,7 @@ func drawAppIcon(size: CGFloat) {
         .draw(in: NSRect(x: eb.minX, y: eb.maxY - eb.height * 0.32, width: eb.width, height: eb.height * 0.32), angle: -90)
 
     // the iris disc
-    let c = NSPoint(x: 512 * s, y: 500 * s), r = 3.35 * k
+    let r = 3.35 * k
     let iris = NSRect(x: c.x - r, y: c.y - r, width: 2 * r, height: 2 * r)
     NSGraphicsContext.saveGraphicsState()
     NSBezierPath(ovalIn: iris).addClip()
@@ -302,13 +315,7 @@ func drawAppIcon(size: CGFloat) {
     NSGraphicsContext.restoreGraphicsState()
 
     // the Claude spark, unchanged
-    let claudeOrange = NSColor(calibratedRed: 0.851, green: 0.467, blue: 0.341, alpha: 1)
-    if let mask = sparkMask {
-        drawSparkMask(mask, center: c, radius: 2.9 * k, color: claudeOrange)
-    } else {
-        claudeOrange.setFill()
-        sparkPath(center: c, radius: 2.6 * k).fill()
-    }
+    if spark { drawLogoSpark(center: c, k: k) }
     NSGraphicsContext.restoreGraphicsState()
 
     // the lids, with one crisp gloss line inside the upper lid
@@ -340,11 +347,35 @@ func drawAppIcon(size: CGFloat) {
         NSGradient(colors: [iconColor(255, 255, 255), iconColor(214, 214, 224)])!.draw(in: pill.bounds, angle: -90)
         NSGraphicsContext.restoreGraphicsState()
     }
-    NSGraphicsContext.restoreGraphicsState()
-
-    // a hairline of light around the tile
-    NSGraphicsContext.saveGraphicsState()
-    strokedOutline(tile, width: 3 * s).addClip()
-    NSGradient(colors: [NSColor.white.withAlphaComponent(0.45), NSColor.white.withAlphaComponent(0.05)])!.draw(in: rect, angle: -90)
-    NSGraphicsContext.restoreGraphicsState()
 }
+
+func drawLogoSpark(center c: NSPoint, k: CGFloat) {
+    if let mask = sparkMask {
+        drawSparkMask(mask, center: c, radius: 2.9 * k, color: claudeOrange)
+    } else {
+        claudeOrange.setFill()
+        sparkPath(center: c, radius: 2.6 * k).fill()
+    }
+}
+
+// The panel shows the icon's eye on a small graphite disc. The spark is a separate
+// image so it can turn on its own while the eye blinks.
+private let logoUnits: CGFloat = 20   // eye units across the image
+
+func logoEyeImage(side: CGFloat) -> NSImage {
+    NSImage(size: NSSize(width: side, height: side), flipped: false) { r in
+        let k = r.width / logoUnits
+        drawLogoEye(center: NSPoint(x: r.midX, y: r.midY - 0.6 * k), k: k, s: k / 36, spark: false)
+        return true
+    }
+}
+
+func logoSparkImage(side: CGFloat) -> NSImage {
+    NSImage(size: NSSize(width: side, height: side), flipped: false) { r in
+        drawLogoSpark(center: NSPoint(x: r.midX, y: r.midY), k: r.width / logoUnits)
+        return true
+    }
+}
+
+/// Where the spark sits in the eye image, as a fraction of its side, measured from the top.
+let logoSparkOffset: CGFloat = 0.6 / logoUnits

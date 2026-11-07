@@ -962,11 +962,21 @@ struct PanelView: View {
     }
 }
 
-/// Insomnia's eye inside a ring that drains as the time limit runs out.
+/// Insomnia's eye inside a ring that drains as the time limit runs out. When on it is
+/// the app icon's eye on a graphite disc, and it looks alive: the Claude spark turns
+/// slowly and the eye blinks now and then. Reduce Motion keeps it still.
 struct TimeRing: View {
     var progress: Double
     var on: Bool
     var busy: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private static let eyeSide: CGFloat = 44
+    private static let eye = logoEyeImage(side: eyeSide * 2)
+    private static let spark = logoSparkImage(side: eyeSide * 2)
+    private static let disc = LinearGradient(colors: [Color(red: 0.36, green: 0.37, blue: 0.42), Color(red: 0.17, green: 0.18, blue: 0.22),
+                                                      Color(red: 0.07, green: 0.07, blue: 0.09), Color(red: 0.04, green: 0.04, blue: 0.055)],
+                                             startPoint: .top, endPoint: .bottom)
 
     var body: some View {
         ZStack {
@@ -976,12 +986,39 @@ struct TimeRing: View {
                 .stroke(nightAccent, style: StrokeStyle(lineWidth: 5, lineCap: .round))
                 .rotationEffect(.degrees(-90))
                 .animation(.easeInOut(duration: 0.6), value: progress)
-            Image(nsImage: menuIcon(on ? .awake : (busy ? .waking : .asleep)))
-                .renderingMode(.template)
-                .resizable().scaledToFit()
-                .frame(width: 26, height: 26)
-                .foregroundStyle(on ? Color.primary : .secondary)
+            Circle().fill(Self.disc)
+                .overlay(Circle().strokeBorder(Color.white.opacity(0.18), lineWidth: 0.5))
+                .padding(7)
+                .opacity(on ? 1 : 0.55)
+            if on {
+                TimelineView(.animation(minimumInterval: 1 / 30, paused: reduceMotion)) { ctx in
+                    let t = reduceMotion ? 0 : ctx.date.timeIntervalSinceReferenceDate
+                    eyeView(t)
+                }
+            } else {
+                Image(nsImage: menuIcon(busy ? .waking : .asleep))
+                    .renderingMode(.template)
+                    .resizable().scaledToFit()
+                    .frame(width: 24, height: 24)
+                    .foregroundStyle(Color.white.opacity(0.8))
+            }
         }
+    }
+
+    private func eyeView(_ t: Double) -> some View {
+        // a quick blink about every 6 s, a slow turn of the spark, a faint breath
+        let phase = t.truncatingRemainder(dividingBy: 6.3)
+        let lid = phase < 0.22 ? 1 - 0.9 * sin(.pi * phase / 0.22) : 1
+        let turn = (t / 18).truncatingRemainder(dividingBy: 1) * 360
+        let breath = 1 + 0.05 * sin(t * 2 * .pi / 3.2)
+        return ZStack {
+            Image(nsImage: Self.eye).resizable().frame(width: Self.eyeSide, height: Self.eyeSide)
+            Image(nsImage: Self.spark).resizable().frame(width: Self.eyeSide, height: Self.eyeSide)
+                .rotationEffect(.degrees(turn))
+                .scaleEffect(breath)
+                .offset(y: Self.eyeSide * logoSparkOffset)
+        }
+        .scaleEffect(x: 1, y: lid, anchor: UnitPoint(x: 0.5, y: 0.5 + logoSparkOffset))
     }
 }
 
