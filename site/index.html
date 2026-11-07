@@ -132,8 +132,19 @@ nav .links a:hover{color:var(--ink);background:rgba(255,255,255,.08)}
 .ring circle{fill:none;stroke-width:5}
 .ring .track{stroke:rgba(255,255,255,.16)}
 .ring .prog{stroke:var(--app-soft);stroke-linecap:round;transition:stroke-dashoffset .6s ease}
-.ring i{position:absolute;inset:16px;background:var(--ink-3);-webkit-mask:var(--icon) center/contain no-repeat;mask:var(--icon) center/contain no-repeat;transition:background .3s}
-.on .ring i{background:#fff}
+.ring .disc{position:absolute;inset:7px;border-radius:50%;background:linear-gradient(180deg,#5c5e6b 0%,#2c2d38 42%,#121218 78%,#0a0a0e 100%);box-shadow:inset 0 0 0 .5px rgba(255,255,255,.18);opacity:.55;transition:opacity .3s}
+.on .ring .disc{opacity:1}
+.ring i{position:absolute;inset:17px;background:rgba(255,255,255,.8);-webkit-mask:var(--icon) center/contain no-repeat;mask:var(--icon) center/contain no-repeat}
+.on .ring i{display:none}
+.ring .leye{position:absolute;inset:7px;display:none;transform-origin:50% 53%;animation:blink 6.3s infinite}
+.on .ring .leye{display:block}
+.ring .leye img{position:absolute;inset:0;width:100%;height:100%}
+.ring .leye .spark{animation:spin 18s linear infinite}
+.ring .leye .spark-wrap{position:absolute;inset:0;transform:translateY(3%);animation:breathe 3.2s ease-in-out infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes breathe{50%{transform:translateY(3%) scale(1.05)}}
+@keyframes blink{0%,3.6%,100%{transform:scaleY(1)}1.8%{transform:scaleY(.1)}}
+@media (prefers-reduced-motion:reduce){.ring .leye,.ring .leye .spark,.ring .leye .spark-wrap{animation:none}}
 .p-title{font:600 22px/1.1 ui-rounded,"SF Pro Rounded",var(--sys);font-variant-numeric:tabular-nums}
 .p-sub{color:var(--ink-2);margin-top:3px;font-size:13px}
 .p-hero .grow{flex:1;min-width:0}
@@ -372,7 +383,9 @@ footer a{color:var(--ink-2)}
       <div class="p-hero">
         <div class="ring" aria-hidden="true">
           <svg viewBox="0 0 58 58"><circle class="track" cx="29" cy="29" r="25"/><circle class="prog" id="ringProg" cx="29" cy="29" r="25" stroke-dasharray="157.08" stroke-dashoffset="157.08"/></svg>
+          <b class="disc"></b>
           <i id="ringEye"></i>
+          <span class="leye"><img src="img/logo-eye.png" alt=""><span class="spark-wrap"><img class="spark" src="img/logo-spark.png" alt=""></span></span>
         </div>
         <div class="grow">
           <div class="p-title" id="pTitle">Sleeping normally</div>
