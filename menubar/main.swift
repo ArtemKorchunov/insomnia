@@ -845,8 +845,16 @@ struct PanelView: View {
             } label: {
                 Text(app.remoteOn ? "Manage" : "Turn On")
             }
-            .menuStyle(.borderedButton)
-            .frame(width: 84)
+            // The native bordered menu goes near-black on the graphite panel, so it
+            // gets its own light capsule to read as a button.
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.visible)
+            .fixedSize()
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background(Capsule().fill(Color.primary.opacity(0.16)))
+            .overlay(Capsule().strokeBorder(Color.primary.opacity(0.22), lineWidth: 0.5))
+            .contentShape(Capsule())
         }
     }
 
